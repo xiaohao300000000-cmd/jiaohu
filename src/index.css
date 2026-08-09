@@ -147,3 +147,214 @@ input { font: inherit; -webkit-tap-highlight-color: transparent; }
 @media (max-width: 420px) {
   .app-header__status { display: none; }
 }
+
+/* Approved neutral dark scene and web glass material. */
+:root {
+  color-scheme: dark;
+  color: #f2f2ef;
+  background: #131414;
+}
+
+body {
+  background-color: #131414;
+  background-image:
+    radial-gradient(ellipse 70% 38% at 18% 16%, rgba(255, 255, 255, 0.055), transparent 70%),
+    radial-gradient(ellipse 64% 44% at 82% 64%, rgba(255, 255, 255, 0.04), transparent 72%),
+    linear-gradient(160deg, #171818 0%, #111212 58%, #151616 100%);
+  color: #f2f2ef;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+}
+
+.app-shell::before {
+  content: "";
+  position: fixed;
+  inset: 48px -18% 96px;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 42% 28% at 24% 18%, rgba(255, 255, 255, 0.045), transparent 72%),
+    radial-gradient(ellipse 36% 30% at 76% 58%, rgba(255, 255, 255, 0.032), transparent 76%);
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  animation: scene-drift 16s ease-in-out infinite alternate;
+}
+
+@keyframes scene-drift {
+  to { transform: translate3d(1.5%, -1%, 0) scale(1.025); }
+}
+
+.app-header {
+  border-bottom-color: transparent;
+  background: rgba(19, 20, 20, 0.32);
+  color: #f2f2ef;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.app-header__inner { height: 58px; }
+
+.app-header--canvas {
+  position: relative;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.app-header--canvas .app-header__inner {
+  width: min(100%, 760px);
+  height: 48px;
+  padding-inline: 16px;
+}
+
+.app-header__canvas-status,
+.app-header__return {
+  color: rgba(242, 242, 239, 0.52);
+  font-size: 11px;
+}
+
+.app-header__return {
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.app-header__return:hover,
+.app-header__return:focus-visible { color: #f2f2ef; }
+
+.app-main,
+.app-main--canvas { min-height: calc(100dvh - 48px); }
+
+.canvas-shell {
+  min-height: inherit;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.task-scroll-space {
+  width: min(100%, 760px);
+  padding: 38px 12px calc(146px + env(safe-area-inset-bottom));
+}
+
+.floating-composer-layer {
+  padding: 18px 12px max(14px, env(safe-area-inset-bottom));
+}
+
+.floating-composer-layer::before {
+  inset: -56px 0 0;
+  background: linear-gradient(to bottom, transparent 0%, rgba(19, 20, 20, 0.2) 48%, rgba(19, 20, 20, 0.48) 100%);
+}
+
+.floating-composer {
+  grid-template-columns: minmax(0, 1fr) 44px;
+  width: min(100%, 560px);
+  padding: 4px 4px 4px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 22px;
+  background: rgba(31, 32, 32, 0.46);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 22px 64px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(30px) saturate(1.14) contrast(1.05);
+  -webkit-backdrop-filter: blur(30px) saturate(1.14) contrast(1.05);
+}
+
+.floating-composer::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 1px solid rgba(255, 255, 255, 0.035);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.floating-composer__edge {
+  inset: 0 17% auto;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.34), transparent);
+}
+
+.floating-composer input {
+  height: 44px;
+  color: #f2f2ef;
+  font-size: 12px;
+}
+
+.floating-composer input::placeholder { color: rgba(242, 242, 239, 0.42); }
+
+.floating-composer button {
+  width: 44px;
+  height: 44px;
+  border-radius: 15px;
+  background: #f4f4f1;
+  color: #181919;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-header { background: rgba(19, 20, 20, 0.96); }
+  .floating-composer { background: rgba(31, 32, 32, 0.96); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .floating-composer { background: rgba(31, 32, 32, 0.94); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell::before { animation: none; }
+}
+
+@media (max-width: 420px) {
+  .task-scroll-space { padding-top: 30px; }
+  .app-header__canvas-status { display: inline; }
+}
+
+.canvas-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.canvas-shell::before {
+  content: "";
+  position: fixed;
+  inset: 48px 0 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 46% 25% at 76% 22%, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.018) 54%, transparent 76%),
+    radial-gradient(ellipse 38% 28% at 16% 64%, rgba(255, 255, 255, 0.05), transparent 74%),
+    linear-gradient(126deg, transparent 18%, rgba(255, 255, 255, 0.032) 36%, transparent 54%);
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  animation: canvas-light-drift 18s ease-in-out infinite alternate;
+}
+
+@keyframes canvas-light-drift {
+  to { transform: translate3d(-1.25%, 0.75%, 0) scale(1.02); }
+}
+
+.floating-composer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(112deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.035) 34%, rgba(255, 255, 255, 0.11) 68%, rgba(255, 255, 255, 0.025));
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-shell::before { animation: none; }
+}
+
+:root {
+  font-family: Manrope, "Noto Sans CJK SC", "PingFang SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}

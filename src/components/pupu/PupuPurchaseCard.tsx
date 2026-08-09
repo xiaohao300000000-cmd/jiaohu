@@ -104,7 +104,7 @@ export function PupuPurchaseCard({
             exit={{ opacity: 0, y: -6 }}
             transition={JOURNEY_SPRINGS.quickSnappy}
           >
-            {payload.products.map((product) => {
+            {payload.products.map((product, index) => {
               const showFallback =
                 !product.imageUrl || failedImages.has(product.productId);
               return (
@@ -113,6 +113,9 @@ export function PupuPurchaseCard({
                   key={product.productId}
                   layoutId={`pupu-product-${product.productId}`}
                 >
+                  <span className="pupu-product__index" aria-hidden="true">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
                   <div className="pupu-product__media">
                     {showFallback ? (
                       <span aria-label="商品暂无图片">

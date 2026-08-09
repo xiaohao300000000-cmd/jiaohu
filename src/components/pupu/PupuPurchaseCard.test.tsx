@@ -27,6 +27,9 @@ describe("PupuPurchaseCard", () => {
 
     expect(screen.getAllByRole("img", { name: /商品图/ })).toHaveLength(3);
     expect(screen.getByText("谷饲肥牛卷")).toBeVisible();
+    expect(screen.getByText("01")).toBeVisible();
+    expect(screen.getByText("02")).toBeVisible();
+    expect(screen.getByText("03")).toBeVisible();
     expect(screen.getByRole("button", { name: "加入购物车" })).toBeEnabled();
   });
 

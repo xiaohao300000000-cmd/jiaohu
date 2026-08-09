@@ -104,17 +104,34 @@ export default function App() {
   return (
     <>
       <div className="app-shell">
-        <header className="app-header">
+        <header className={`app-header${isCanvas ? " app-header--canvas" : ""}`}>
           <div className="app-header__inner">
-            <a
-              className="app-brand"
-              href="#home"
-              aria-label="Pupu 首页"
-              onClick={resetHome}
-            >
-              Pupu
-            </a>
-            <span className="app-header__status">前端交互模板</span>
+            {isCanvas ? (
+              <>
+                <span className="app-header__canvas-status">
+                  Agent 决策已完成
+                </span>
+                <button
+                  className="app-header__return"
+                  type="button"
+                  onClick={resetHome}
+                >
+                  返回首页
+                </button>
+              </>
+            ) : (
+              <>
+                <a
+                  className="app-brand"
+                  href="#home"
+                  aria-label="Pupu 首页"
+                  onClick={resetHome}
+                >
+                  Pupu
+                </a>
+                <span className="app-header__status">前端交互模板</span>
+              </>
+            )}
           </div>
         </header>
 
