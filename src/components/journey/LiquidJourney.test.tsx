@@ -23,7 +23,6 @@ describe("LiquidJourney", () => {
       <LiquidJourney snapshot={snapshot({ state: "receiving" })} />,
     );
 
-    expect(screen.getByText(`“${requestText}”`)).toBeInTheDocument();
     expect(screen.getByText("正在接收需求")).toBeInTheDocument();
     expect(container.querySelector(".journey-ambient--active")).toBeTruthy();
   });

@@ -9,20 +9,13 @@
   box-shadow: 0 28px 80px rgba(48, 40, 29, 0.1);
 }
 
-.pupu-purchase-card__header {
+.pupu-decision {
   display: grid;
-  gap: 10px;
-  padding: 22px 20px 18px;
+  gap: 15px;
+  padding: 24px 20px 20px;
 }
 
-.pupu-purchase-card__header > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.pupu-purchase-card__eyebrow {
+.pupu-decision__eyebrow {
   color: #7c766e;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 8px;
@@ -30,12 +23,7 @@
   letter-spacing: 0.13em;
 }
 
-.pupu-source {
-  color: #746e66;
-  font-size: 9px;
-}
-
-.pupu-purchase-card__header h1 {
+.pupu-decision h1 {
   margin: 0;
   color: #292724;
   font-size: clamp(25px, 7vw, 34px);
@@ -44,12 +32,71 @@
   line-height: 1.08;
 }
 
-.pupu-purchase-card__header p {
+.pupu-decision__summary {
   margin: 0;
   color: #706a63;
   font-size: 11px;
   line-height: 1.65;
 }
+
+.pupu-decision__facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: end;
+}
+
+.pupu-decision__facts > div { display: flex; align-items: center; gap: 7px; }
+.pupu-decision__facts > div:first-child { display: grid; gap: 4px; }
+.pupu-decision__facts small { color: #837d75; font-size: 9px; }
+.pupu-decision__facts strong { color: #292724; font-size: 16px; font-weight: 640; letter-spacing: -0.025em; }
+.pupu-decision__facts > div:last-child strong { font-size: 11px; font-weight: 560; }
+
+.pupu-budget-track {
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(39, 35, 30, 0.09);
+}
+
+.pupu-budget-track span { display: block; height: 100%; border-radius: inherit; background: #343230; }
+
+.pupu-constraints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pupu-constraints li {
+  padding: 6px 9px;
+  border: 1px solid rgba(39, 35, 30, 0.09);
+  border-radius: 9px;
+  background: rgba(247, 245, 240, 0.8);
+  color: #5e5953;
+  font-size: 9px;
+}
+
+.pupu-evidence-toggle {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 18px;
+  border: 0;
+  border-block: 1px solid rgba(39, 35, 30, 0.075);
+  background: rgba(247, 245, 240, 0.42);
+  color: #4f4b46;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.pupu-evidence-toggle span { display: flex; align-items: center; gap: 8px; }
+.pupu-evidence-toggle > svg { transition: transform 180ms ease; }
+.pupu-evidence-toggle > svg.is-open { transform: rotate(180deg); }
 
 .pupu-product-list {
   display: grid;
@@ -112,31 +159,10 @@
 
 .pupu-purchase-card__footer {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 13px 16px;
-  align-items: end;
-  padding: 17px 18px 18px;
+  padding: 16px 18px 18px;
 }
-
-.pupu-delivery-note {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #79736b;
-  font-size: 9px;
-}
-
-.pupu-purchase-card__total {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-}
-
-.pupu-purchase-card__total span { color: #8a837a; font-size: 8px; }
-.pupu-purchase-card__total strong { font-size: 15px; font-weight: 650; }
 
 .pupu-purchase-card__footer button {
-  grid-column: 1 / -1;
   display: flex;
   min-height: 48px;
   align-items: center;
@@ -154,19 +180,19 @@
 .pupu-purchase-card__footer button:active { transform: scale(0.985); }
 
 @media (max-width: 350px) {
-  .pupu-purchase-card__header { padding-inline: 17px; }
+  .pupu-decision { padding-inline: 17px; }
   .pupu-product { grid-template-columns: 58px minmax(0, 1fr) auto; gap: 9px; padding-inline: 12px; }
   .pupu-product__media { width: 58px; height: 58px; border-radius: 13px; }
 }
 
 .pupu-cart-card__header {
   position: relative;
-  padding-right: 66px;
+  padding-right: 68px;
 }
 
 .pupu-cart-card__check {
   position: absolute;
-  top: 57px;
+  top: 24px;
   right: 20px;
   display: grid;
   width: 34px;
@@ -210,6 +236,23 @@
   color: #6f6961;
   font-size: 10px;
 }
+
+.pupu-cart-card__footer {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 13px 16px;
+  align-items: end;
+}
+
+.pupu-cart-card__total {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.pupu-cart-card__total span { color: #8a837a; font-size: 8px; }
+.pupu-cart-card__total strong { font-size: 15px; font-weight: 650; }
+
+.pupu-cart-card__footer > button { grid-column: 1 / -1; }
 
 .pupu-cart-card__status {
   grid-column: 1 / -1;

@@ -31,6 +31,7 @@ test("universal home anchors lightweight answers below the composer", async ({
     await expect(result).toBeVisible();
     await expect(result).toContainText("你的包裹正在派送");
     await expect(result).toContainText("示例数据");
+    await page.waitForTimeout(400);
 
     const composerBox = await composer.boundingBox();
     const resultBox = await result.boundingBox();
@@ -53,6 +54,8 @@ test("complex requests take over the canvas without clipping the final action", 
   await expect(
     page.getByRole("heading", { name: "把需求变成一份可执行的方案" }),
   ).toBeVisible();
+  await expect(page.getByText("来自你的输入")).toBeVisible();
+  await expect(page.getByText("今晚吃什么", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "查看采购方案" })).toBeVisible();
 
   const resultsBox = await page
@@ -61,12 +64,15 @@ test("complex requests take over the canvas without clipping the final action", 
   const actionBox = await page
     .locator('[data-journey-region="action"]')
     .boundingBox();
-  const composerBox = await page.locator(".canvas-composer").boundingBox();
+  const composer = page.getByTestId("floating-composer");
+  const composerBox = await composer.boundingBox();
   expect(resultsBox).not.toBeNull();
   expect(actionBox).not.toBeNull();
   expect(composerBox).not.toBeNull();
   expect(actionBox!.y).toBeGreaterThanOrEqual(resultsBox!.y + resultsBox!.height);
-  expect(composerBox!.y).toBeGreaterThanOrEqual(actionBox!.y + actionBox!.height);
+  await expect(composer).toHaveCSS("position", "relative");
+  await expect(page.locator(".floating-composer-layer")).toHaveCSS("position", "fixed");
+  expect(await composer.evaluate((node) => node.closest('[data-testid="journey-origin"]'))).toBeNull();
   await expectNoHorizontalOverflow(page);
 });
 
@@ -82,20 +88,22 @@ test("Pupu purchase becomes an assistant cart before real-cart approval", async 
     await page.getByRole("button", { name: "朴朴帮我买" }).click();
 
     const plan = page.locator(".pupu-purchase-card");
-    await expect(
-      page.getByRole("heading", { name: "今晚的火锅采购方案" }),
-    ).toBeVisible();
-    await expect(plan).toContainText("示例数据");
+    await expect(page.getByRole("heading", { name: "火锅 · 2 人" })).toBeVisible();
+    await expect(plan).toContainText("¥74.60 / ¥120");
+    await expect(plan).toContainText("不辣");
+    await expect(plan).not.toContainText("示例数据");
+    await expect(plan.locator("img")).toHaveCount(0);
+    await page.getByRole("button", { name: "查看商品证据（3 件）" }).click();
     await expect(plan.locator("img").first()).toBeVisible();
     await expect
       .poll(() => plan.locator("img").first().evaluate((image) => image.naturalWidth))
       .toBeGreaterThan(0);
 
     const planBox = await plan.boundingBox();
-    const composerBox = await page.locator(".canvas-composer").boundingBox();
+    const composerBox = await page.getByTestId("floating-composer").boundingBox();
     expect(planBox).not.toBeNull();
     expect(composerBox).not.toBeNull();
-    expect(composerBox!.y).toBeGreaterThanOrEqual(planBox!.y + planBox!.height);
+    expect(composerBox!.y + composerBox!.height).toBeLessThanOrEqual(viewport.height);
     await expectNoHorizontalOverflow(page);
 
     await page.getByRole("button", { name: "加入购物车" }).click();
@@ -120,10 +128,9 @@ test("high-risk requests rise in a dismissible bottom sheet", async ({ page }) =
 
   const sheet = page.getByRole("dialog", { name: "需要你的确认" });
   await expect(sheet).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "今天想让我做什么？" }),
-  ).toBeVisible();
+  await expect(page.locator(".agent-home h1")).toHaveText("今天想让我做什么？");
   await expect(page.getByRole("heading", { name: "确认退款申请" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "关闭确认面板" })).toBeFocused();
 
   const sheetBox = await sheet.boundingBox();
   expect(sheetBox).not.toBeNull();

@@ -17,6 +17,7 @@ describe("PupuCartCard", () => {
 
     expect(screen.getByText("已加入助手购物车")).toBeVisible();
     expect(screen.getByText("购物车版本 v1")).toBeVisible();
+    expect(screen.queryByText("示例数据")).not.toBeInTheDocument();
     expect(screen.queryByText("已同步朴朴购物车")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "同步到朴朴购物车" }));

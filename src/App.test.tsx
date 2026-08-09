@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "./App";
@@ -50,10 +50,28 @@ describe("universal Agent home", () => {
     await user.click(screen.getByRole("button", { name: "朴朴帮我买" }));
 
     expect(
-      await screen.findByRole("heading", { name: "今晚的火锅采购方案" }),
+      await screen.findByRole("heading", { name: "火锅 · 2 人" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("示例数据")).toBeInTheDocument();
+    expect(screen.getByText("¥74.60 / ¥120")).toBeInTheDocument();
+    expect(screen.queryByText("示例数据")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "加入购物车" })).toBeInTheDocument();
+  });
+
+  it("keeps the submitted sentence as the source of the task object", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByLabelText("输入生活指令");
+    expect(input).toHaveAttribute("data-layout-id", "journey-request-text");
+    await user.type(input, "两个人今晚火锅，120以内");
+    await user.click(screen.getByRole("button", { name: "发送指令" }));
+
+    expect(await screen.findByText("来自你的输入")).toBeInTheDocument();
+    expect(screen.getByText("两个人今晚火锅，120以内")).toBeInTheDocument();
+    expect(screen.getByTestId("journey-origin")).toHaveAttribute(
+      "data-layout-id",
+      "journey-origin",
+    );
   });
 
   it("turns the plan into a versioned assistant cart", async () => {
@@ -96,9 +114,24 @@ describe("universal Agent home", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(/今晚两个人吃什么/)).toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "今天想让我做什么？" }),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "今天想让我做什么？" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps the task composer in a separate floating layer", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("输入生活指令"), "今晚两个人吃什么");
+    await user.click(screen.getByRole("button", { name: "发送指令" }));
+
+    const composer = await screen.findByTestId("floating-composer");
+    expect(composer).toHaveClass("floating-composer");
+    expect(composer.closest('[data-testid="journey-origin"]')).toBeNull();
+    expect(screen.getByTestId("task-scroll-space")).toBeInTheDocument();
   });
 
   it("keeps the home behind a bottom sheet for high-risk requests", async () => {

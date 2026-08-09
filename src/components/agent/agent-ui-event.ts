@@ -38,6 +38,11 @@ export interface PupuPurchasePayload {
   stage: "cart_ready" | "cart_updated";
   title: string;
   summary: string;
+  meal: string;
+  people: number;
+  budget: number;
+  constraints: string[];
+  decisionSummary: string;
   products: ProductSummary[];
   total: number;
   currency: "CNY";
@@ -100,11 +105,16 @@ export function createDemoPupuPurchaseEvent(
       stage: "cart_ready",
       title: "今晚的火锅采购方案",
       summary: `根据“${input}”整理了 3 件核心食材，仍可继续补充或替换。`,
+      meal: "火锅",
+      people: 2,
+      budget: 120,
+      constraints: ["不辣", "不要香菜", "2人份"],
+      decisionSummary: "优先保留肥牛和菌菇，用番茄锅底满足不辣要求；当前组合留有 ¥45.40 预算余量。",
       products,
       total: 74.6,
       currency: "CNY",
       cartVersion: 0,
-      estimatedDelivery: "示例预计 30 分钟送达",
+      estimatedDelivery: "约 30 min",
     },
     occurredAt,
   };

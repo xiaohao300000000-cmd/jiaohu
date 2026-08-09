@@ -13,6 +13,13 @@ describe("Agent UI event contract", () => {
       dataSource: "demo",
     });
     expect(event.payload.products).toHaveLength(3);
+    expect(event.payload).toMatchObject({
+      meal: "火锅",
+      people: 2,
+      budget: 120,
+      constraints: ["不辣", "不要香菜", "2人份"],
+      decisionSummary: expect.any(String),
+    });
     expect(event.payload.products[0]).toMatchObject({
       productId: expect.any(String),
       imageUrl: expect.any(String),

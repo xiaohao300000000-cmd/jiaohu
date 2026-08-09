@@ -41,22 +41,6 @@ export function LiquidJourney({
 
   const narrative = (
     <>
-      <AnimatePresence initial={false} mode="popLayout">
-        {snapshot.requestText && snapshot.state !== "idle" && (
-          <motion.p
-            className="journey-request"
-            key={snapshot.activeRequestId ?? "request"}
-            layoutId="journey-request"
-            initial={{ opacity: 0, y: 12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.985 }}
-            transition={JOURNEY_SPRINGS.quickSnappy}
-          >
-            “{snapshot.requestText}”
-          </motion.p>
-        )}
-      </AnimatePresence>
-
       <motion.div className="journey-heading" layout>
         <div className="journey-heading__status" role="status" aria-live="polite">
           <span aria-hidden="true" />
@@ -140,9 +124,9 @@ export function LiquidJourney({
         <motion.div
           className="journey-presence-shell"
           key={snapshot.state === "interrupted" ? "interrupted" : "active"}
-          initial={{ opacity: 0, filter: "blur(5px)" }}
-          animate={{ opacity: 1, filter: "blur(0px)" }}
-          exit={{ opacity: 0, y: -12, filter: "blur(8px)" }}
+          initial={{ opacity: 0, y: 8, scale: 0.995 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -12, scale: 0.99 }}
           transition={JOURNEY_SPRINGS.quickSnappy}
         >
           <JourneySurface

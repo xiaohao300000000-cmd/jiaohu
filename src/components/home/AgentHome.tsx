@@ -44,10 +44,20 @@ export function AgentHome({
         </motion.div>
 
         <motion.div className="agent-home__conversation" layout transition={JOURNEY_SPRINGS.quickSnappy}>
-          <form className="home-composer" data-testid="home-composer" onSubmit={submit}>
+          <motion.form
+            className="home-composer"
+            data-testid="home-composer"
+            data-layout-id="journey-origin"
+            layoutId="journey-origin"
+            transition={JOURNEY_SPRINGS.groundedSettle}
+            onSubmit={submit}
+          >
             <label className="sr-only" htmlFor="home-instruction">输入生活指令</label>
-            <input
+            <motion.input
               id="home-instruction"
+              data-layout-id="journey-request-text"
+              layoutId="journey-request-text"
+              transition={JOURNEY_SPRINGS.quickSnappy}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder={anchoredTask ? "继续问一问" : "说说你现在想做什么"}
@@ -56,7 +66,7 @@ export function AgentHome({
             <button type="submit" aria-label="发送指令">
               <ArrowUp size={18} strokeWidth={2} aria-hidden="true" />
             </button>
-          </form>
+          </motion.form>
 
           <AnimatePresence initial={false} mode="popLayout">
             {anchoredTask && (

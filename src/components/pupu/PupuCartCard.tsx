@@ -20,16 +20,13 @@ export function PupuCartCard({ payload, onSync, status }: PupuCartCardProps) {
       layoutId="pupu-purchase-surface"
       transition={JOURNEY_SPRINGS.groundedSettle}
     >
-      <header className="pupu-purchase-card__header pupu-cart-card__header">
-        <div>
-          <span className="pupu-purchase-card__eyebrow">ASSISTANT CART</span>
-          <span className="pupu-source">示例数据</span>
-        </div>
+      <header className="pupu-decision pupu-cart-card__header">
+        <span className="pupu-decision__eyebrow">助手购物车</span>
         <span className="pupu-cart-card__check" aria-hidden="true">
           <Check size={17} strokeWidth={2.2} />
         </span>
         <h1 id="pupu-cart-title">已加入助手购物车</h1>
-        <p>共 {itemCount} 件商品。这里可以继续调整，尚未写入真实朴朴购物车。</p>
+        <p className="pupu-decision__summary">共 {itemCount} 件商品。这里可以继续调整，尚未写入真实朴朴购物车。</p>
       </header>
 
       <div className="pupu-cart-summary">
@@ -51,7 +48,7 @@ export function PupuCartCard({ payload, onSync, status }: PupuCartCardProps) {
           <ShoppingBasket size={15} strokeWidth={1.8} aria-hidden="true" />
           <span>购物车版本 v{cartVersion}</span>
         </div>
-        <div className="pupu-purchase-card__total">
+        <div className="pupu-cart-card__total">
           <span>助手购物车合计</span>
           <strong>¥{payload.total.toFixed(2)}</strong>
         </div>

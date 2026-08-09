@@ -19,6 +19,44 @@ input {
   width: 100%;
 }
 
+.journey-origin {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 720px);
+  margin-inline: auto;
+}
+
+.journey-origin__source {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 580px);
+  margin-left: auto;
+  padding: 13px 16px;
+  border: 1px solid rgba(29, 29, 31, 0.08);
+  border-radius: 19px 19px 6px 19px;
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 12px 34px rgba(53, 45, 34, 0.05);
+  backdrop-filter: blur(18px);
+}
+
+.journey-origin__source span {
+  color: #89837b;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+}
+
+.journey-origin__source p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #292724;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.journey-origin__growth { min-width: 0; }
+
 .journey-surface {
   --paper: rgba(255, 255, 255, 0.72);
   --ink: #1d1d1f;
@@ -31,18 +69,10 @@ input {
   grid-template-rows: auto auto auto;
   row-gap: clamp(18px, 3vw, 28px);
   width: min(100%, 720px);
-  min-height: min(760px, calc(100svh - 108px));
+  min-height: 0;
   margin: 0 auto;
-  padding: clamp(24px, 6vw, 64px) clamp(18px, 5vw, 44px) 48px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 36px;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(241, 236, 226, 0.72)),
-    #f5f1e9;
-  box-shadow:
-    0 28px 80px rgba(62, 50, 31, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  padding: clamp(12px, 3vw, 24px) clamp(4px, 2vw, 12px) 24px;
+  overflow: visible;
 }
 
 .journey-ambient {
@@ -167,7 +197,7 @@ input {
   margin: 0;
   color: var(--ink);
   font-size: clamp(30px, 6vw, 52px);
-  font-weight: 520;
+  font-weight: 400;
   letter-spacing: -0.052em;
   line-height: 0.98;
   text-wrap: balance;

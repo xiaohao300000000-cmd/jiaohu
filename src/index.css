@@ -82,32 +82,60 @@ input { font: inherit; -webkit-tap-highlight-color: transparent; }
 .app-main { min-height: calc(100dvh - 66px); }
 
 .app-main--canvas {
-  width: min(100%, 880px);
-  margin-inline: auto;
-  padding: 28px 12px 34px;
+  min-height: calc(100dvh - 66px);
 }
 
-.canvas-shell { display: grid; gap: 16px; }
+.canvas-shell { min-height: inherit; }
 
-.canvas-composer {
+.task-scroll-space {
+  width: min(100%, 880px);
+  min-height: inherit;
+  margin-inline: auto;
+  padding: 28px 12px calc(132px + env(safe-area-inset-bottom));
+}
+
+.floating-composer-layer {
+  position: fixed;
+  z-index: 30;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 18px 12px max(14px, env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+
+.floating-composer-layer::before {
+  content: "";
+  position: absolute;
+  inset: -34px 0 0;
+  z-index: -1;
+  background: linear-gradient(to bottom, transparent, rgba(247, 244, 238, 0.72) 54%);
+  pointer-events: none;
+}
+
+.floating-composer {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 40px;
   gap: 8px;
   width: min(100%, 650px);
   align-items: center;
-  justify-self: center;
+  margin-inline: auto;
   padding: 7px 7px 7px 15px;
-  border: 1px solid rgba(29, 29, 31, 0.11);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.76);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 18px 48px rgba(53, 44, 30, 0.1);
-  backdrop-filter: blur(20px);
+  background: rgba(250, 249, 246, 0.72);
+  box-shadow: 0 18px 56px rgba(42, 38, 32, 0.16), inset 0 1px rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(24px) saturate(1.08);
+  pointer-events: auto;
 }
 
-.canvas-composer input { min-width: 0; height: 40px; border: 0; outline: 0; background: transparent; color: #292724; font-size: 13px; }
-.canvas-composer input::placeholder { color: #8f8a83; }
-.canvas-composer button { display: grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 13px; background: #232324; color: #fbfaf7; cursor: pointer; }
-.canvas-composer button:active { transform: scale(0.96); }
+.floating-composer__edge { position: absolute; inset: 0 18% auto; height: 1px; background: rgba(255, 255, 255, 0.94); pointer-events: none; }
+.floating-composer input { min-width: 0; height: 40px; border: 0; outline: 0; background: transparent; color: #292724; font-size: 13px; }
+.floating-composer input::placeholder { color: #8f8a83; }
+.floating-composer button { display: grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 13px; background: #232324; color: #fbfaf7; cursor: pointer; }
+.floating-composer button:active { transform: scale(0.96); }
 
 .app-footer {
   display: flex;

@@ -20,13 +20,12 @@ export function JourneyTrace({ entries }: JourneyTraceProps) {
             className="journey-trace__item"
             key={entry.id}
             layout
-            initial={{ opacity: 0, y: 10, filter: "blur(7px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: -6, filter: "blur(5px)" }}
+            initial={{ opacity: 0, y: 10, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.99 }}
             transition={{
               layout: JOURNEY_SPRINGS.quickSnappy,
               opacity: JOURNEY_TWEENS.fade,
-              filter: JOURNEY_TWEENS.fade,
             }}
           >
             <span

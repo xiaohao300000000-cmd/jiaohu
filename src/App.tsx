@@ -1,46 +1,20 @@
-import { ArrowUp } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { useMemo, useState, type FormEvent } from "react";
+import { LayoutGroup, motion } from "motion/react";
+import { useMemo, useState } from "react";
 import { createDemoPupuPurchaseEvent } from "./components/agent/agent-ui-event";
 import { AgentHome } from "./components/home/AgentHome";
+import { FloatingComposer } from "./components/home/FloatingComposer";
 import {
   resolveDemoPresentation,
   type TaskPresentation,
 } from "./components/home/presentation";
 import { TaskSheet } from "./components/home/TaskSheet";
 import { JourneyApproval } from "./components/journey/JourneyApproval";
+import { JourneyOriginSurface } from "./components/journey/JourneyOriginSurface";
 import { LiquidJourney } from "./components/journey/LiquidJourney";
 import { useJourneyDemo } from "./components/journey/useJourneyDemo";
 import { PupuPurchaseCard } from "./components/pupu/PupuPurchaseCard";
 import { PupuCartCard } from "./components/pupu/PupuCartCard";
 import { JOURNEY_SPRINGS } from "./config/motion";
-
-function CanvasComposer({ onSubmit }: { onSubmit: (value: string) => void }) {
-  const [value, setValue] = useState("");
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const next = value.trim();
-    if (!next) return;
-    onSubmit(next);
-    setValue("");
-  };
-
-  return (
-    <form className="canvas-composer" onSubmit={submit}>
-      <label className="sr-only" htmlFor="canvas-instruction">输入新的生活指令</label>
-      <input
-        id="canvas-instruction"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="继续追问，或输入新指令"
-      />
-      <button type="submit" aria-label="发送新指令">
-        <ArrowUp size={17} strokeWidth={2} aria-hidden="true" />
-      </button>
-    </form>
-  );
-}
 
 export default function App() {
   const [activeTask, setActiveTask] = useState<TaskPresentation | null>(null);
@@ -128,87 +102,94 @@ export default function App() {
   );
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <div className="app-header__inner">
-          <a
-            className="app-brand"
-            href="#home"
-            aria-label="Pupu 首页"
-            onClick={resetHome}
-          >
-            Pupu
-          </a>
-          <span className="app-header__status">前端交互模板</span>
-        </div>
-      </header>
-
-      <main id="home" className={`app-main${isCanvas ? " app-main--canvas" : ""}`}>
-        <AnimatePresence initial={false} mode="wait">
-          {isCanvas ? (
-            <motion.section
-              className="canvas-shell"
-              key="canvas"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={JOURNEY_SPRINGS.quickSnappy}
+    <>
+      <div className="app-shell">
+        <header className="app-header">
+          <div className="app-header__inner">
+            <a
+              className="app-brand"
+              href="#home"
+              aria-label="Pupu 首页"
+              onClick={resetHome}
             >
-              {isPupuPurchase && pupuPurchaseEvent ? (
-                <AnimatePresence initial={false} mode="wait">
-                  {pupuCartAdded ? (
-                    <PupuCartCard
-                      key="pupu-cart"
-                      payload={{
-                        ...pupuPurchaseEvent.payload,
-                        stage: "cart_updated",
-                        cartVersion: 1,
-                      }}
-                      status={pupuSyncStatus}
-                      onSync={requestPupuSync}
-                    />
-                  ) : (
-                    <PupuPurchaseCard
-                      key="pupu-plan"
-                      event={pupuPurchaseEvent}
-                      onAddToCart={() => setPupuCartAdded(true)}
-                    />
-                  )}
-                </AnimatePresence>
-              ) : (
-                <LiquidJourney
-                  snapshot={snapshot}
-                  onApprovalResponse={resolveApproval}
-                  onClarificationSubmit={submitClarification}
-                  onRetry={retry}
-                  onInterruptedExitComplete={completeInterruptionExit}
+              Pupu
+            </a>
+            <span className="app-header__status">前端交互模板</span>
+          </div>
+        </header>
+
+        <main
+          id="home"
+          className={`app-main${isCanvas ? " app-main--canvas" : ""}`}
+        >
+          <LayoutGroup id="agent-journey">
+            {isCanvas ? (
+              <motion.section
+                className="canvas-shell"
+                key="canvas"
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={JOURNEY_SPRINGS.quickSnappy}
+              >
+                <div
+                  className="task-scroll-space"
+                  data-testid="task-scroll-space"
+                >
+                  <JourneyOriginSurface
+                    requestText={activeTask.input}
+                    state={isPupuPurchase ? "ready" : snapshot.state}
+                  >
+                    {isPupuPurchase && pupuPurchaseEvent ? (
+                      pupuCartAdded ? (
+                        <PupuCartCard
+                          key="pupu-cart"
+                          payload={{
+                            ...pupuPurchaseEvent.payload,
+                            stage: "cart_updated",
+                            cartVersion: 1,
+                          }}
+                          status={pupuSyncStatus}
+                          onSync={requestPupuSync}
+                        />
+                      ) : (
+                        <PupuPurchaseCard
+                          key="pupu-plan"
+                          event={pupuPurchaseEvent}
+                          onAddToCart={() => setPupuCartAdded(true)}
+                        />
+                      )
+                    ) : (
+                      <LiquidJourney
+                        snapshot={snapshot}
+                        onApprovalResponse={resolveApproval}
+                        onClarificationSubmit={submitClarification}
+                        onRetry={retry}
+                        onInterruptedExitComplete={completeInterruptionExit}
+                      />
+                    )}
+                  </JourneyOriginSurface>
+                </div>
+                <FloatingComposer onSubmit={startTask} />
+              </motion.section>
+            ) : (
+              <div key="home">
+                <AgentHome
+                  activeTask={activeTask}
+                  onSubmit={startTask}
+                  onExampleSelect={startTask}
                 />
-              )}
-              <CanvasComposer onSubmit={startTask} />
-            </motion.section>
-          ) : (
-            <motion.div
-              key="home"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={JOURNEY_SPRINGS.quickSnappy}
-            >
-              <AgentHome
-                activeTask={activeTask}
-                onSubmit={startTask}
-                onExampleSelect={startTask}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
+              </div>
+            )}
+          </LayoutGroup>
+        </main>
 
-      {!isCanvas && (
-        <footer className="app-footer">
-          <span>当前为示例界面，尚未连接 Agent</span>
-        </footer>
-      )}
+        {!isCanvas && (
+          <footer className="app-footer">
+            <span>当前为示例界面，尚未连接 Agent</span>
+          </footer>
+        )}
+      </div>
 
       <TaskSheet
         open={isSheet}
@@ -229,11 +210,13 @@ export default function App() {
         ) : (
           <div className="task-sheet__pending" role="status">
             <span>正在准备确认信息</span>
-            <h2>{pupuSyncOpen ? "确认同步到朴朴购物车" : activeTask?.input}</h2>
+            <h2>
+              {pupuSyncOpen ? "确认同步到朴朴购物车" : activeTask?.input}
+            </h2>
             <p>正在检查操作对象和影响范围，确认前不会执行任何操作。</p>
           </div>
         )}
       </TaskSheet>
-    </div>
+    </>
   );
 }
