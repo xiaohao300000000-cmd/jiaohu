@@ -1,329 +1,222 @@
-import { useState, useEffect } from 'react';
-import { ScreenType, PlanData, MenuItem, CartItem } from './types';
-import { Header } from './components/Header';
-import { BottomInputBar } from './components/BottomInputBar';
-import { ScreenResting } from './components/ScreenResting';
-import { ScreenProcessing } from './components/ScreenProcessing';
-import { ScreenPlan } from './components/ScreenPlan';
-import { MenuDrawer } from './components/MenuDrawer';
-import { CartDrawer } from './components/CartDrawer';
-import { PackageModal } from './components/PackageModal';
-import { VoiceModal } from './components/VoiceModal';
-import { AccountModal } from './components/AccountModal';
-
-// Initial Preset Sample Data
-const DEFAULT_HOTPOT_PLAN: PlanData = {
-  title: "正在准备今晚的晚餐",
-  query: "今晚三个人吃火锅，微辣，200元以内。",
-  statusTag: "AI PROCESSING",
-  reasoningSteps: [
-    { text: "理解人数与预算", detail: "3人 · 微辣 · ≤¥200", completed: true },
-    { text: "结合常用购买偏好", detail: "避开过敏源，优选常购品牌", completed: true },
-    { text: "正在寻找合适商品", detail: "已为您精选3人火锅套餐组合", completed: false, loading: true }
-  ],
-  menu: {
-    title: "今晚火锅备餐清单 (3人)",
-    totalAmount: 168.5,
-    items: [
-      {
-        id: "m1",
-        name: "海底捞醇香清油火锅底料",
-        spec: "微辣 / 220g",
-        price: 18.5,
-        image: "https://images.unsplash.com/photo-1541832676-9b763b0239ab?w=200&auto=format&fit=crop"
-      },
-      {
-        id: "m2",
-        name: "精选雪花原切肥牛卷",
-        spec: "冷鲜 / 350g",
-        price: 58.0,
-        image: "https://images.unsplash.com/photo-1588168333986-5078d3ae3976?w=200&auto=format&fit=crop"
-      },
-      {
-        id: "m3",
-        name: "高品质原切羊肉卷",
-        spec: "冷鲜 / 300g",
-        price: 49.0,
-        image: "https://images.unsplash.com/photo-1544025162-d76694265947?w=200&auto=format&fit=crop"
-      },
-      {
-        id: "m4",
-        name: "鲜采有机火锅蔬菜包",
-        spec: "配菜 / 600g",
-        price: 25.0,
-        image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=200&auto=format&fit=crop"
-      },
-      {
-        id: "m5",
-        name: "鲜榨玉米汁 (无糖)",
-        spec: "饮品 / 1000ml",
-        price: 18.0,
-        image: "https://images.unsplash.com/photo-1622484210800-88510891fe97?w=200&auto=format&fit=crop"
-      }
-    ]
-  },
-  smartHomeControls: [
-    { id: "light", label: "客厅灯光", status: "暖色微醺 (已就绪)", isOn: true },
-    { id: "ventilation", label: "厨房排烟", status: "智能感应模式", isOn: true }
-  ],
-  reminders: [
-    { id: "cleaning", title: "桌椅与餐具准备提醒", status: "已预约 18:30", time: "18:30", completed: false }
-  ]
-};
-
-const DEFAULT_WESTERN_PLAN: PlanData = {
-  title: "今晚西式菜单 (4人)",
-  query: "今晚 7 点有 4 位客人，准备一份西式菜单，家里有点乱，记得提前提醒我打扫，顺便把灯光调暖一点。",
-  statusTag: "PLAN READY",
-  reasoningHeader: "正在规划您的晚宴方案...",
-  reasoningSteps: [
-    { text: "生成 4 人份西式菜单及采购清单", detail: "", completed: true },
-    { text: "设定 17:00 打扫卫生提醒", detail: "", completed: true },
-    { text: "配置客厅灯光情景：暖色微醺", detail: "", completed: true }
-  ],
-  menu: {
-    title: "今晚西式菜单 (4人)",
-    totalAmount: 428.0,
-    items: [
-      {
-        id: "w1",
-        name: "澳洲 M5 肉眼牛排",
-        spec: "冷鲜 / 约 800g",
-        price: 258.0,
-        image: "https://images.unsplash.com/photo-1603048588665-791ca8aea617?w=200&auto=format&fit=crop"
-      },
-      {
-        id: "w2",
-        name: "新鲜有机芦笋",
-        spec: "配菜 / 2把",
-        price: 45.0,
-        image: "https://images.unsplash.com/photo-1515471209610-e3f15de54f12?w=200&auto=format&fit=crop"
-      },
-      {
-        id: "w3",
-        name: "黑皮诺红葡萄酒",
-        spec: "智利产区 / 750ml",
-        price: 125.0,
-        image: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=200&auto=format&fit=crop"
-      }
-    ]
-  },
-  smartHomeControls: [
-    { id: "light", label: "客厅灯光", status: "暖色微醺 (已就绪)", isOn: true }
-  ],
-  reminders: [
-    { id: "cleaning", title: "打扫提醒", status: "已为您预约", time: "17:00", completed: false }
-  ]
-};
+import { LayoutGroup, motion } from "motion/react";
+import { useMemo, useState } from "react";
+import { createDemoPupuPurchaseEvent } from "./components/agent/agent-ui-event";
+import { AgentHome } from "./components/home/AgentHome";
+import { FloatingComposer } from "./components/home/FloatingComposer";
+import {
+  resolveDemoPresentation,
+  type TaskPresentation,
+} from "./components/home/presentation";
+import { TaskSheet } from "./components/home/TaskSheet";
+import { JourneyApproval } from "./components/journey/JourneyApproval";
+import { JourneyOriginSurface } from "./components/journey/JourneyOriginSurface";
+import { LiquidJourney } from "./components/journey/LiquidJourney";
+import { useJourneyDemo } from "./components/journey/useJourneyDemo";
+import { PupuPurchaseCard } from "./components/pupu/PupuPurchaseCard";
+import { PupuCartCard } from "./components/pupu/PupuCartCard";
+import { JOURNEY_SPRINGS } from "./config/motion";
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('processing');
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [planData, setPlanData] = useState<PlanData>(DEFAULT_HOTPOT_PLAN);
+  const [activeTask, setActiveTask] = useState<TaskPresentation | null>(null);
+  const [pupuCartAdded, setPupuCartAdded] = useState(false);
+  const [pupuSyncOpen, setPupuSyncOpen] = useState(false);
+  const [pupuSyncStatus, setPupuSyncStatus] = useState("");
+  const {
+    snapshot,
+    startStandard,
+    playApproval,
+    respondToApproval,
+    submitClarification,
+    retry,
+    completeInterruptionExit,
+  } = useJourneyDemo({ autoPlay: false });
 
-  // Modals & Drawers state
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [isPackageOpen, setIsPackageOpen] = useState(false);
-  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
-  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const resetHome = () => {
+    setActiveTask(null);
+    setPupuCartAdded(false);
+    setPupuSyncOpen(false);
+    setPupuSyncStatus("");
+  };
 
-  // Switch presets
-  const handleSelectPreset = (screen: ScreenType) => {
-    setCurrentScreen(screen);
-    if (screen === 'processing') {
-      setPlanData(DEFAULT_HOTPOT_PLAN);
-    } else if (screen === 'plan') {
-      setPlanData(DEFAULT_WESTERN_PLAN);
+  const startTask = (input: string) => {
+    const next = resolveDemoPresentation(input);
+    setActiveTask(next);
+    setPupuCartAdded(false);
+    setPupuSyncOpen(false);
+    setPupuSyncStatus("");
+
+    if (next.mode === "canvas" && next.kind !== "pupu_purchase") {
+      startStandard(next.input);
+    } else if (next.mode === "sheet") {
+      playApproval(next.input, {
+        kind: "approval",
+        approvalId: `demo-approval-${Date.now()}`,
+        title: next.input.includes("退款") ? "确认退款申请" : "确认高风险操作",
+        impact: next.input.includes("退款")
+          ? "提交后将进入退款流程，款项不会立即到账。"
+          : "确认后将提交操作，但此前端演示不会真实扣款。",
+        target: "示例订单 · 未连接真实账户",
+        amount: 68,
+        currency: "CNY",
+      });
     }
   };
 
-  // Cart operations
-  const handleAddToCart = (item: MenuItem) => {
-    setCartItems((prev) => {
-      const existing = prev.find((i) => i.id === item.id);
-      if (existing) {
-        return prev.map((i) =>
-          i.id === item.id ? { ...i, cartQuantity: i.cartQuantity + 1 } : i
-        );
-      }
-      return [...prev, { ...item, cartQuantity: 1 }];
+  const resolveApproval = (approved: boolean) => {
+    respondToApproval(approved);
+    if (pupuSyncOpen) {
+      setPupuSyncOpen(false);
+      setPupuSyncStatus(
+        approved
+          ? "演示确认完成，未执行真实同步"
+          : "已取消同步，助手购物车保持不变",
+      );
+      return;
+    }
+    setActiveTask(null);
+  };
+
+  const requestPupuSync = () => {
+    if (!pupuPurchaseEvent) return;
+    setPupuSyncOpen(true);
+    playApproval("确认同步到朴朴购物车", {
+      kind: "approval",
+      approvalId: `pupu-cart-sync-${Date.now()}`,
+      title: "确认同步到朴朴购物车",
+      impact: "确认后才允许能力提供方尝试同步；当前演示不会修改真实朴朴购物车。",
+      target: "助手购物车 v1 · 未连接真实账户",
+      amount: pupuPurchaseEvent.payload.total,
+      currency: "CNY",
     });
   };
 
-  const handleAddAllToCart = (items: MenuItem[]) => {
-    items.forEach((item) => handleAddToCart(item));
-    setIsCartOpen(true);
-  };
-
-  const handleUpdateCartQuantity = (id: string, delta: number) => {
-    setCartItems((prev) =>
-      prev
-        .map((item) => {
-          if (item.id === id) {
-            const newQty = item.cartQuantity + delta;
-            return newQty > 0 ? { ...item, cartQuantity: newQty } : null;
-          }
-          return item;
-        })
-        .filter(Boolean) as CartItem[]
-    );
-  };
-
-  const handleClearCart = () => {
-    setCartItems([]);
-  };
-
-  // Handle custom user prompt submit
-  const handleSubmitPrompt = async (promptText: string) => {
-    setIsLoading(true);
-    setCurrentScreen('plan');
-
-    try {
-      const res = await fetch('/api/pupu/agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: promptText })
-      });
-      const json = await res.json();
-      if (json.success && json.data) {
-        setPlanData(json.data);
-      } else {
-        // Fallback custom plan structure
-        setPlanData({
-          title: "专属生活指令方案",
-          query: promptText,
-          statusTag: "PLAN READY",
-          reasoningHeader: "正在规划您的专属方案...",
-          reasoningSteps: [
-            { text: "分析需求与家庭设备意图", detail: promptText, completed: true },
-            { text: "搜寻朴朴超市备餐与周边服务", detail: "挑选适量高分生鲜", completed: true },
-            { text: "配置设备联动与日程提醒", detail: "已自动连接灯光与定时任务", completed: true }
-          ],
-          menu: {
-            title: "推荐采购/定制清单",
-            totalAmount: 198.0,
-            items: [
-              {
-                id: "p1",
-                name: "有机新鲜食材礼盒",
-                spec: "精选 / 1000g",
-                price: 138.0,
-                image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=200&auto=format&fit=crop"
-              },
-              {
-                id: "p2",
-                name: "佐餐鲜果饮/红酒",
-                spec: "瓶装 / 750ml",
-                price: 60.0,
-                image: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=200&auto=format&fit=crop"
-              }
-            ]
-          },
-          smartHomeControls: [
-            { id: "light", label: "客厅灯光", status: "暖色柔光 (已设置)", isOn: true }
-          ],
-          reminders: [
-            { id: "rem1", title: "需求提醒", status: "已为您预约", time: "18:00", completed: false }
-          ]
-        });
-      }
-    } catch (err) {
-      console.error("Failed to query Pupu agent:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const totalCartCount = cartItems.reduce((acc, item) => acc + item.cartQuantity, 0);
+  const isCanvas = activeTask?.mode === "canvas";
+  const isSheet = activeTask?.mode === "sheet" || pupuSyncOpen;
+  const isPupuPurchase = activeTask?.kind === "pupu_purchase";
+  const pupuPurchaseEvent = useMemo(
+    () =>
+      isPupuPurchase && activeTask
+        ? createDemoPupuPurchaseEvent(activeTask.input)
+        : null,
+    [activeTask, isPupuPurchase],
+  );
 
   return (
-    <div className="min-h-screen flex flex-col font-sans bg-[#f9f7f2] text-[#1c1b1b] relative overflow-x-hidden selection:bg-black/10">
-      {/* Top Header */}
-      <Header
-        currentScreen={currentScreen}
-        onOpenMenu={() => setIsMenuOpen(true)}
-        onOpenCart={() => setIsCartOpen(true)}
-        onOpenAccount={() => setIsAccountOpen(true)}
-        cartCount={totalCartCount}
-        onSelectScreen={handleSelectPreset}
-      />
+    <>
+      <div className="app-shell">
+        <header className="app-header">
+          <div className="app-header__inner">
+            <a
+              className="app-brand"
+              href="#home"
+              aria-label="Pupu 首页"
+              onClick={resetHome}
+            >
+              Pupu
+            </a>
+            <span className="app-header__status">前端交互模板</span>
+          </div>
+        </header>
 
-      {/* Main Canvas View */}
-      <main className="flex-1 flex flex-col w-full">
-        {currentScreen === 'resting' && (
-          <ScreenResting
-            onOpenPackageDetail={() => setIsPackageOpen(true)}
-            onSelectPreset={handleSelectPreset}
-            onAddToCart={handleAddToCart}
-          />
+        <main
+          id="home"
+          className={`app-main${isCanvas ? " app-main--canvas" : ""}`}
+        >
+          <LayoutGroup id="agent-journey">
+            {isCanvas ? (
+              <motion.section
+                className="canvas-shell"
+                key="canvas"
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={JOURNEY_SPRINGS.quickSnappy}
+              >
+                <div
+                  className="task-scroll-space"
+                  data-testid="task-scroll-space"
+                >
+                  <JourneyOriginSurface
+                    requestText={activeTask.input}
+                    state={isPupuPurchase ? "ready" : snapshot.state}
+                  >
+                    {isPupuPurchase && pupuPurchaseEvent ? (
+                      pupuCartAdded ? (
+                        <PupuCartCard
+                          key="pupu-cart"
+                          payload={{
+                            ...pupuPurchaseEvent.payload,
+                            stage: "cart_updated",
+                            cartVersion: 1,
+                          }}
+                          status={pupuSyncStatus}
+                          onSync={requestPupuSync}
+                        />
+                      ) : (
+                        <PupuPurchaseCard
+                          key="pupu-plan"
+                          event={pupuPurchaseEvent}
+                          onAddToCart={() => setPupuCartAdded(true)}
+                        />
+                      )
+                    ) : (
+                      <LiquidJourney
+                        snapshot={snapshot}
+                        onApprovalResponse={resolveApproval}
+                        onClarificationSubmit={submitClarification}
+                        onRetry={retry}
+                        onInterruptedExitComplete={completeInterruptionExit}
+                      />
+                    )}
+                  </JourneyOriginSurface>
+                </div>
+                <FloatingComposer onSubmit={startTask} />
+              </motion.section>
+            ) : (
+              <div key="home">
+                <AgentHome
+                  activeTask={activeTask}
+                  onSubmit={startTask}
+                  onExampleSelect={startTask}
+                />
+              </div>
+            )}
+          </LayoutGroup>
+        </main>
+
+        {!isCanvas && (
+          <footer className="app-footer">
+            <span>当前为示例界面，尚未连接 Agent</span>
+          </footer>
         )}
+      </div>
 
-        {currentScreen === 'processing' && (
-          <ScreenProcessing
-            planData={planData}
-            onAddToCart={handleAddToCart}
-            onSelectPreset={handleSelectPreset}
+      <TaskSheet
+        open={isSheet}
+        onClose={() => {
+          if (pupuSyncOpen) {
+            setPupuSyncOpen(false);
+          } else {
+            resetHome();
+          }
+        }}
+      >
+        {snapshot.state === "awaiting_input" && snapshot.awaitingInput ? (
+          <JourneyApproval
+            input={snapshot.awaitingInput}
+            onApprovalResponse={resolveApproval}
+            onClarificationSubmit={submitClarification}
           />
+        ) : (
+          <div className="task-sheet__pending" role="status">
+            <span>正在准备确认信息</span>
+            <h2>
+              {pupuSyncOpen ? "确认同步到朴朴购物车" : activeTask?.input}
+            </h2>
+            <p>正在检查操作对象和影响范围，确认前不会执行任何操作。</p>
+          </div>
         )}
-
-        {currentScreen === 'plan' && (
-          <ScreenPlan
-            planData={planData}
-            onAddToCart={handleAddToCart}
-            onAddAllToCart={handleAddAllToCart}
-          />
-        )}
-      </main>
-
-      {/* Floating Bottom Agent Input Bar */}
-      <BottomInputBar
-        currentScreen={currentScreen}
-        isLoading={isLoading}
-        onSubmitPrompt={handleSubmitPrompt}
-        onOpenVoice={() => setIsVoiceOpen(true)}
-        onSelectPreset={handleSelectPreset}
-      />
-
-      {/* Side Navigation Drawer */}
-      <MenuDrawer
-        isOpen={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        currentScreen={currentScreen}
-        onSelectScreen={handleSelectPreset}
-        onOpenCart={() => setIsCartOpen(true)}
-        onOpenPackage={() => setIsPackageOpen(true)}
-        onOpenAccount={() => setIsAccountOpen(true)}
-      />
-
-      {/* Shopping Cart Drawer */}
-      <CartDrawer
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        cartItems={cartItems}
-        onUpdateQuantity={handleUpdateCartQuantity}
-        onClearCart={handleClearCart}
-      />
-
-      {/* SF Package Tracking Modal */}
-      <PackageModal
-        isOpen={isPackageOpen}
-        onClose={() => setIsPackageOpen(false)}
-      />
-
-      {/* Real-time Voice Interaction Modal */}
-      <VoiceModal
-        isOpen={isVoiceOpen}
-        onClose={() => setIsVoiceOpen(false)}
-        onSubmitVoiceText={handleSubmitPrompt}
-      />
-
-      {/* User Preferences / Allergy Profile Modal */}
-      <AccountModal
-        isOpen={isAccountOpen}
-        onClose={() => setIsAccountOpen(false)}
-      />
-    </div>
+      </TaskSheet>
+    </>
   );
 }
