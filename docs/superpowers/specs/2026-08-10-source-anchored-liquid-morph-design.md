@@ -80,9 +80,38 @@ journey-primary-action
 - 删除内容先收束到其来源节点，再降低透明度，不能原地凭空消失。
 - `interrupted` 状态让当前任务对象缩回来源句，再由新输入接管 `journey-origin`。
 
+## Agent-first 采购结果层级
+
+Pupu 采购方案首先表达 Agent 的决策结果，不能以商品列表作为首屏主体。
+
+任务对象进入 ready 后，首屏结构固定为：
+
+```text
+来自你的输入
+两个人今晚火锅，120 以内
+
+火锅 · 2 人
+¥108 / ¥120
+预计 30 min
+已满足：不辣 / 不要香菜
+
+Agent 决策摘要
+“优先保留肉类和蔬菜完整度，底料选择番茄口味。”
+
+查看商品证据（6 件）
+加入助手购物车
+```
+
+- 人数、预算使用情况、预计送达和硬约束是主要信息。
+- Agent 决策摘要只解释可验证的选择依据，不显示隐藏推理或伪造置信度。
+- 商品是可展开的证据层，默认只显示代表性商品和“查看全部”入口。
+- 展开后才显示图片、名称、规格、单价、库存和替代品。
+- 总价同时出现在预算关系中，不在底部重复制造传统电商结算栏。
+- 主动作是“加入助手购物车”，不能写成已经同步真实朴朴购物车。
+
 ## 玻璃材质连续性
 
-任务对象使用一个共享 `GlassMaterial`，由 Motion 驱动 CSS 变量：
+任务对象使用一个共享 `GlassMaterial`。CSS 变量只选择静态材质预设：
 
 ```text
 --glass-alpha
@@ -104,7 +133,16 @@ journey-primary-action
 | ready | 折射收敛、blur 稳定、边缘和阴影更沉稳 |
 | awaiting_input | 背景任务对象进一步失焦，授权层成为最清晰材质 |
 
-Motion 负责变量插值和共享布局。CSS 负责 `backdrop-filter`、mask 高光和色彩污染。SVG displacement 只在短暂的扩张与融合阶段启用，不在静止状态持续运行。
+Motion 只动画 `transform` 和 `opacity`。`backdrop-filter`、SVG displacement 和不同 blur 强度必须是静态层级属性，不得在 Motion keyframes、Presence transition 或 CSS transition 中插值。
+
+材质连续感通过以下方式完成：
+
+- 固定 blur 的薄玻璃层与厚玻璃层进行 opacity 交叉。
+- 边缘高光伪元素只改变 transform 和 opacity。
+- 静态 SVG displacement 层只在形变瞬间通过 opacity 短暂显现。
+- 不同 Z 层使用固定 blur preset，不在运动过程中计算 blur 数值。
+
+这样保留玻璃的连续变化感，同时避免移动端每帧重新计算 blur。现有 `LiquidJourney`、`JourneyTrace` 和 `JourneyResultStack` 中所有动画 `filter: blur(...)` 必须删除。
 
 ## 悬浮 Composer
 
@@ -114,6 +152,15 @@ Motion 负责变量插值和共享布局。CSS 负责 `backdrop-filter`、mask �
 - 任务内容滚到 composer 后方时，通过透明度、blur 和边缘高光体现真实遮挡与透射关系。
 - composer 不放进任务 surface，不随结果卡一起滚动。
 - 键盘弹出时以 `visualViewport` 或 CSS 动态视口更新底部位置，避免输入层被软键盘覆盖。
+
+## Sheet 焦点与键盘契约
+
+- 打开时保存 `document.activeElement`，并把焦点自动移到 sheet 内的首个主要操作；加载态则聚焦关闭按钮。
+- `Tab` 与 `Shift+Tab` 必须在 sheet 内循环，不得进入被遮罩的任务内容。
+- `Escape` 关闭 sheet。
+- 关闭后把焦点恢复到触发 sheet 的按钮。
+- sheet 打开时背景内容使用 `inert` 或等价机制阻止键盘与辅助技术访问，并锁定背景滚动。
+- 长按按钮仍提供 Enter 键的明确等价操作。
 
 ## 组件边界
 
@@ -150,9 +197,37 @@ Motion 负责变量插值和共享布局。CSS 负责 `backdrop-filter`、mask �
 - 任务态 composer 悬浮在底部安全区上方，内容可从其后方滚动。
 - 最终结果和主操作能够滚到 composer 上方，不发生遮挡。
 - reasoning、约束、商品与结果节点使用稳定的 `layoutId`。
+- Pupu ready 首屏先展示 `火锅 · 2 人`、`¥108 / ¥120`、预计送达与已满足约束；商品列表默认作为证据层折叠。
+- Motion 运行路径不包含动画 `filter`、`backdrop-filter` 或 blur CSS 变量。
+- Sheet 自动聚焦、焦点循环、Escape 退出和关闭后焦点恢复全部通过键盘测试。
 - 320x720 与 390x844 无横向溢出、穿模或软键盘遮挡。
 - error、awaiting_input、interrupted 和 reduced-motion 路径保持可操作。
 - 单元测试、类型检查、构建和 Playwright 手机端测试全部通过。
+
+## 体验验证分层
+
+自动化测试只证明约束，不再被描述为产品体验验收。
+
+### 自动化门槛
+
+- 320x720、390x844 和长页面状态的几何关系。
+- 来源输入与最终结果同时可见。
+- shared-layout 节点标识稳定，阶段切换不发生整页卸载。
+- 长输入、商品证据展开、内容滚动和 composer 遮挡关系。
+- Sheet 的完整键盘与焦点行为。
+- reduced-motion 路径。
+- 关键状态截图基线：首页、reasoning、决策摘要、证据展开、助手购物车、授权 sheet。
+- Playwright touch 项目中的触摸滚动和点击目标。
+
+### 必须单独记录的真机验收
+
+- iPhone Safari 真实软键盘弹出、收起和输入法候选栏。
+- Safari 地址栏展开与收起造成的动态视口变化。
+- 真实惯性滚动和底部 composer 后方的材质关系。
+- PWA standalone 模式的 safe area、状态栏和返回路径。
+- 低端或发热状态下的持续帧率与触摸响应。
+
+没有完成真机项目时，只能报告“自动化门槛通过”，不能报告“手机体验合格”。
 
 ## 本轮边界
 

@@ -142,7 +142,7 @@ export const JOURNEY_SPRINGS = {
 
 - `quickSnappy`：输入确认、卡片弹出、Trace 展开、标签变化、打断退场。
 - `groundedSettle`：完整方案落定、底部面板停稳、最终动作出现。
-- 所有动效只改变 `transform` 和 `opacity`，并遵守 `prefers-reduced-motion`。
+- 所有运动过程只动画 `transform` 和 `opacity`，并遵守 `prefers-reduced-motion`。`filter`、`backdrop-filter` 与 blur CSS 变量只能作为静态层级样式，不能进入 Motion keyframes 或 CSS transition。
 
 ## 首页结构
 
