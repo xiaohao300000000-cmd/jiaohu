@@ -1,0 +1,231 @@
+.pupu-purchase-card {
+  display: grid;
+  width: min(100%, 620px);
+  margin-inline: auto;
+  overflow: hidden;
+  border: 1px solid rgba(39, 35, 30, 0.09);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 28px 80px rgba(48, 40, 29, 0.1);
+}
+
+.pupu-purchase-card__header {
+  display: grid;
+  gap: 10px;
+  padding: 22px 20px 18px;
+}
+
+.pupu-purchase-card__header > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pupu-purchase-card__eyebrow {
+  color: #7c766e;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: 0.13em;
+}
+
+.pupu-source {
+  color: #746e66;
+  font-size: 9px;
+}
+
+.pupu-purchase-card__header h1 {
+  margin: 0;
+  color: #292724;
+  font-size: clamp(25px, 7vw, 34px);
+  font-weight: 520;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.pupu-purchase-card__header p {
+  margin: 0;
+  color: #706a63;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.pupu-product-list {
+  display: grid;
+  border-block: 1px solid rgba(39, 35, 30, 0.075);
+}
+
+.pupu-product {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 11px 16px;
+}
+
+.pupu-product + .pupu-product {
+  border-top: 1px solid rgba(39, 35, 30, 0.065);
+}
+
+.pupu-product__media {
+  display: grid;
+  width: 66px;
+  height: 66px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 15px;
+  background: #efede7;
+  color: #9a938a;
+}
+
+.pupu-product__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pupu-product__copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.pupu-product__copy strong {
+  overflow: hidden;
+  color: #302e2a;
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pupu-product__copy span,
+.pupu-product__copy small {
+  color: #847e76;
+  font-size: 9px;
+}
+
+.pupu-product__copy small { color: #6c685f; }
+.pupu-product > b { color: #302e2a; font-size: 12px; font-weight: 650; }
+
+.pupu-purchase-card__footer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 13px 16px;
+  align-items: end;
+  padding: 17px 18px 18px;
+}
+
+.pupu-delivery-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #79736b;
+  font-size: 9px;
+}
+
+.pupu-purchase-card__total {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.pupu-purchase-card__total span { color: #8a837a; font-size: 8px; }
+.pupu-purchase-card__total strong { font-size: 15px; font-weight: 650; }
+
+.pupu-purchase-card__footer button {
+  grid-column: 1 / -1;
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 15px;
+  background: #282725;
+  color: #fcfbf7;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.pupu-purchase-card__footer button:active { transform: scale(0.985); }
+
+@media (max-width: 350px) {
+  .pupu-purchase-card__header { padding-inline: 17px; }
+  .pupu-product { grid-template-columns: 58px minmax(0, 1fr) auto; gap: 9px; padding-inline: 12px; }
+  .pupu-product__media { width: 58px; height: 58px; border-radius: 13px; }
+}
+
+.pupu-cart-card__header {
+  position: relative;
+  padding-right: 66px;
+}
+
+.pupu-cart-card__check {
+  position: absolute;
+  top: 57px;
+  right: 20px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e4eadf;
+  color: #4f6148;
+}
+
+.pupu-cart-summary {
+  display: grid;
+  padding: 4px 18px;
+  border-block: 1px solid rgba(39, 35, 30, 0.075);
+}
+
+.pupu-cart-summary__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 14px;
+  padding: 12px 0;
+}
+
+.pupu-cart-summary__item + .pupu-cart-summary__item {
+  border-top: 1px solid rgba(39, 35, 30, 0.065);
+}
+
+.pupu-cart-summary__item span {
+  color: #302e2a;
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.pupu-cart-summary__item small { color: #847e76; font-size: 9px; }
+.pupu-cart-summary__item b { grid-row: 1 / 3; grid-column: 2; align-self: center; font-size: 11px; font-weight: 650; }
+
+.pupu-cart-card__version {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #6f6961;
+  font-size: 10px;
+}
+
+.pupu-cart-card__status {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(76, 97, 69, 0.14);
+  border-radius: 12px;
+  background: rgba(228, 234, 223, 0.55);
+  color: #4f6148;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.pupu-cart-card__safety {
+  grid-column: 1 / -1;
+  color: #8a837a;
+  font-size: 8px;
+  text-align: center;
+}

@@ -1,6 +1,0 @@
-{
-  "name": "Pupu AI Household Assistant",
-  "description": "Smart AI household assistant featuring task breakdown, dinner menu planning with shopping list, smart home controls, and ambient home status updates.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
