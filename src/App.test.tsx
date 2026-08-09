@@ -53,6 +53,8 @@ describe("universal Agent home", () => {
       await screen.findByRole("heading", { name: "火锅 · 2 人" }),
     ).toBeInTheDocument();
     expect(screen.getByText("¥74.60 / ¥120")).toBeInTheDocument();
+    expect(screen.getByText("Agent 决策已完成")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回首页" })).toBeInTheDocument();
     expect(screen.queryByText("示例数据")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "加入购物车" })).toBeInTheDocument();
   });

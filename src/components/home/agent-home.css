@@ -214,3 +214,144 @@
   .task-sheet-layer { padding: 22px; }
   .task-sheet { padding: 12px 20px 20px; }
 }
+
+/* The reusable Agent home shares the approved neutral dark glass system. */
+.agent-home__kicker,
+.agent-home__intro > p:last-child,
+.agent-home__examples > span,
+.anchored-result__request { color: rgba(242, 242, 239, 0.46); }
+
+.agent-home__intro h1,
+.quick-card h2,
+.quick-card__eta,
+.parcel-route b { color: #f2f2ef; }
+
+.home-composer {
+  grid-template-columns: minmax(0, 1fr) 44px;
+  padding: 5px 5px 5px 16px;
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  background: rgba(31, 32, 32, 0.54);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+    0 24px 68px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(24px) saturate(1.12) contrast(1.05);
+  -webkit-backdrop-filter: blur(24px) saturate(1.12) contrast(1.05);
+}
+
+.home-composer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(112deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.035) 36%, rgba(255, 255, 255, 0.09) 70%, rgba(255, 255, 255, 0.025));
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.home-composer:focus-within {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 26px 72px rgba(0, 0, 0, 0.36);
+}
+
+.home-composer input {
+  height: 44px;
+  color: #f2f2ef;
+}
+
+.home-composer input::placeholder { color: rgba(242, 242, 239, 0.4); }
+
+.home-composer button {
+  width: 44px;
+  height: 44px;
+  border-radius: 15px;
+  background: #f4f4f1;
+  color: #171818;
+}
+
+.quick-card {
+  border-color: rgba(255, 255, 255, 0.11);
+  background: rgba(31, 32, 32, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 22px 58px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(24px) saturate(1.1);
+  -webkit-backdrop-filter: blur(24px) saturate(1.1);
+}
+
+.quick-card__meta,
+.quick-card__title-row p,
+.parcel-route span,
+.weather-strip span,
+.delivery-progress span { color: rgba(242, 242, 239, 0.44); }
+
+.quick-card__meta small,
+.agent-home__examples button {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(242, 242, 239, 0.72);
+}
+
+.quick-card__title-row > svg,
+.weather-strip b,
+.delivery-progress .is-complete,
+.delivery-progress .is-active { color: #f2f2ef; }
+
+.parcel-route::before,
+.delivery-progress::before { background: rgba(255, 255, 255, 0.11); }
+.parcel-route li::before {
+  border-color: #1f2020;
+  background: #f2f2ef;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.agent-home__examples button { min-height: 46px; }
+.agent-home__examples button:hover,
+.agent-home__examples button:focus-visible {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.075);
+}
+
+.task-sheet-layer {
+  background: rgba(0, 0, 0, 0.46);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.task-sheet {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(31, 32, 32, 0.84);
+  color: #f2f2ef;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 34px 96px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(26px) saturate(1.12);
+  -webkit-backdrop-filter: blur(26px) saturate(1.12);
+}
+
+.task-sheet__handle { background: rgba(255, 255, 255, 0.16); }
+.task-sheet__close {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
+  color: #f2f2ef;
+}
+.task-sheet__pending > span,
+.task-sheet__pending p { color: rgba(242, 242, 239, 0.5); }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .home-composer,
+  .quick-card { background: rgba(31, 32, 32, 0.97); }
+  .task-sheet { background: rgb(31, 32, 32); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .home-composer,
+  .quick-card { background: rgba(31, 32, 32, 0.94); }
+  .task-sheet { background: rgba(31, 32, 32, 0.97); }
+}

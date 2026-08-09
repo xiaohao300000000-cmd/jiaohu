@@ -3,6 +3,25 @@ import { expect, test } from "@playwright/test";
 const longRequest =
   "今晚两个人吃什么，希望清淡一点，不要香菜，控制在一百二十元以内，而且最好三十分钟左右可以准备好";
 
+test("home keeps the same neutral dark glass foundation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const material = await page.locator(".home-composer").evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      background: style.backgroundColor,
+      backdrop: style.backdropFilter,
+    };
+  });
+
+  expect(material.background).toMatch(/^rgba\(31, 32, 32, 0\.[4-7]\d?\)$/);
+  expect(material.backdrop).toContain("blur(24px)");
+  await expect(page).toHaveScreenshot("agent-home-dark.png", {
+    animations: "disabled",
+  });
+});
+
 test("a long request stays attached while the task grows behind the composer", async ({
   page,
 }) => {
@@ -51,6 +70,43 @@ test("Pupu decision screenshots preserve collapsed and expanded evidence", async
 
   await expect(page.getByText("¥74.60 / ¥120")).toBeVisible();
   await expect(page.getByText("谷饲肥牛卷")).toHaveCount(0);
+
+  const material = await page.evaluate(() => {
+    const body = getComputedStyle(document.body);
+    const canvas = getComputedStyle(document.querySelector(".canvas-shell")!);
+    const origin = getComputedStyle(
+      document.querySelector('[data-testid="journey-origin"]')!,
+    );
+    const composer = getComputedStyle(
+      document.querySelector('[data-testid="floating-composer"]')!,
+    );
+    const css = Array.from(document.styleSheets)
+      .flatMap((sheet) => Array.from(sheet.cssRules, (rule) => rule.cssText))
+      .join("\\n");
+    return {
+      bodyBackground: body.backgroundColor,
+      canvasBackground: canvas.backgroundColor,
+      canvasRadius: canvas.borderRadius,
+      originBackground: origin.backgroundColor,
+      originBackdrop: origin.backdropFilter,
+      composerBackground: composer.backgroundColor,
+      composerBackdrop: composer.backdropFilter,
+      css,
+    };
+  });
+
+  expect(material.bodyBackground).toBe("rgb(19, 20, 20)");
+  expect(material.canvasBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(material.canvasRadius).toBe("0px");
+  expect(material.originBackground).toMatch(
+    /^rgba\(31, 32, 32, 0\.[4-7]\d?\)$/,
+  );
+  expect(material.originBackdrop).toContain("blur(28px)");
+  expect(material.composerBackground).toMatch(
+    /^rgba\(31, 32, 32, 0\.[3-6]\d?\)$/,
+  );
+  expect(material.composerBackdrop).toContain("blur(30px)");
+  expect(material.css).toContain("prefers-reduced-transparency: reduce");
   await expect(page).toHaveScreenshot("pupu-decision-collapsed.png", {
     animations: "disabled",
   });
@@ -74,6 +130,17 @@ test("approval sheet traps focus and restores its source action", async ({ page 
   const trigger = page.getByRole("button", { name: "确认退款" });
   await trigger.click();
 
+  const sheetMaterial = await page.locator(".task-sheet").evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      background: style.backgroundColor,
+      backdrop: style.backdropFilter,
+    };
+  });
+  expect(sheetMaterial.background).toMatch(
+    /^rgba\(31, 32, 32, 0\.[7-9]\d?\)$/,
+  );
+  expect(sheetMaterial.backdrop).toContain("blur(26px)");
   const close = page.getByRole("button", { name: "关闭确认面板" });
   await expect(close).toBeFocused();
   await expect(page.locator(".app-shell")).toHaveAttribute("inert", "");
