@@ -160,4 +160,3 @@ Steps 4-5 requiring DeepSeek run only after the user installs the dedicated test
 ## Acceptance Boundary
 
 The framework is ready for the test key when all key-independent automated checks pass and a real CLI read query succeeds on the VPS. The feature is fully live only after a DeepSeek-backed Hermes run drives the browser end to end.
-

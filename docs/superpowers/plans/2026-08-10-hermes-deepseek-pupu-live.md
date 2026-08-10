@@ -474,4 +474,3 @@ Expected: clean worktree, intentional commits only, no whitespace errors, no sec
 - [ ] **Step 4: Stop at the test-key gate**
 
 Report exactly which checks passed, whether CLI auth/catalog is live, and the VPS-only command the user can use to install the dedicated `DEEPSEEK_API_KEY`. Do not claim end-to-end model completion until a real Hermes + DeepSeek + Pupu browser run passes.
-
