@@ -8,12 +8,12 @@ export default defineConfig({
     timeout: 8_000,
   },
   use: {
-    baseURL: "http://127.0.0.1:5173",
+    baseURL: "http://127.0.0.1:4173",
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run dev -- --host 127.0.0.1 --port 5173",
-    url: "http://127.0.0.1:5173",
+    command: "APP_HOST=127.0.0.1 APP_PORT=4173 npm run dev",
+    url: "http://127.0.0.1:4173",
     reuseExistingServer: true,
   },
   projects: [

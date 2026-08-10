@@ -10,9 +10,7 @@ async function expectNoHorizontalOverflow(
   expect(width.scroll).toBeLessThanOrEqual(width.client);
 }
 
-test("universal home anchors lightweight answers below the composer", async ({
-  page,
-}) => {
+test("home discloses the real read-only Hermes channel", async ({ page }) => {
   for (const viewport of [
     { width: 390, height: 844 },
     { width: 320, height: 720 },
@@ -23,131 +21,81 @@ test("universal home anchors lightweight answers below the composer", async ({
     await expect(
       page.getByRole("heading", { name: "今天想让我做什么？" }),
     ).toBeVisible();
-    await page.getByLabel("输入生活指令").fill("查一下我的快递");
-    await page.getByRole("button", { name: "发送指令" }).click();
-
-    const composer = page.getByTestId("home-composer");
-    const result = page.getByTestId("anchored-result");
-    await expect(result).toBeVisible();
-    await expect(result).toContainText("你的包裹正在派送");
-    await expect(result).toContainText("示例数据");
-    await page.waitForTimeout(400);
-
-    const composerBox = await composer.boundingBox();
-    const resultBox = await result.boundingBox();
-    expect(composerBox).not.toBeNull();
-    expect(resultBox).not.toBeNull();
-    expect(resultBox!.y).toBeGreaterThanOrEqual(
-      composerBox!.y + composerBox!.height,
-    );
+    await expect(page.getByText("Hermes 实时只读")).toHaveCount(1);
+    await expect(
+      page.getByText("Hermes 实时通道 · 朴朴首版只读模式"),
+    ).toBeVisible();
+    await expect(page.getByText("示例数据")).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
   }
 });
 
-test("complex requests take over the canvas without clipping the final action", async ({
-  page,
-}) => {
+test("free-form requests enter the live journey canvas", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByRole("button", { name: "今晚吃什么" }).click();
+  await page.getByLabel("输入生活指令").fill("查一下朴朴购物车");
+  await page.getByRole("button", { name: "发送指令" }).click();
 
   await expect(
     page.getByRole("heading", { name: "把需求变成一份可执行的方案" }),
   ).toBeVisible();
   await expect(page.getByText("来自你的输入")).toBeVisible();
-  await expect(page.getByText("今晚吃什么", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "查看采购方案" })).toBeVisible();
-
-  const resultsBox = await page
-    .locator('[data-journey-region="results"]')
-    .boundingBox();
-  const actionBox = await page
-    .locator('[data-journey-region="action"]')
-    .boundingBox();
-  const composer = page.getByTestId("floating-composer");
-  const composerBox = await composer.boundingBox();
-  expect(resultsBox).not.toBeNull();
-  expect(actionBox).not.toBeNull();
-  expect(composerBox).not.toBeNull();
-  expect(actionBox!.y).toBeGreaterThanOrEqual(resultsBox!.y + resultsBox!.height);
-  await expect(composer).toHaveCSS("position", "relative");
-  await expect(page.locator(".floating-composer-layer")).toHaveCSS("position", "fixed");
-  expect(await composer.evaluate((node) => node.closest('[data-testid="journey-origin"]'))).toBeNull();
+  await expect(page.getByText("查一下朴朴购物车", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("floating-composer")).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回首页" })).toBeEnabled();
+  await expect(page.getByText("示例数据")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "加入购物车" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "同步到朴朴购物车" })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
 });
 
-test("Pupu purchase becomes an assistant cart before real-cart approval", async ({
+test("every example uses the same live adapter without mock results", async ({
   page,
 }) => {
-  for (const viewport of [
-    { width: 390, height: 844 },
-    { width: 320, height: 720 },
-  ]) {
-    await page.setViewportSize(viewport);
+  for (const label of ["今晚吃什么", "朴朴帮我买", "确认退款"]) {
     await page.goto("/");
-    await page.getByRole("button", { name: "朴朴帮我买" }).click();
-
-    const plan = page.locator(".pupu-purchase-card");
-    await expect(page.getByRole("heading", { name: "火锅 · 2 人" })).toBeVisible();
-    await expect(plan).toContainText("¥74.60 / ¥120");
-    await expect(plan).toContainText("不辣");
-    await expect(plan).not.toContainText("示例数据");
-    await expect(plan.locator("img")).toHaveCount(0);
-    await page.getByRole("button", { name: "查看商品证据（3 件）" }).click();
-    await expect(plan.locator("img").first()).toBeVisible();
-    await expect
-      .poll(() => plan.locator("img").first().evaluate((image) => image.naturalWidth))
-      .toBeGreaterThan(0);
-
-    const planBox = await plan.boundingBox();
-    const composerBox = await page.getByTestId("floating-composer").boundingBox();
-    expect(planBox).not.toBeNull();
-    expect(composerBox).not.toBeNull();
-    expect(composerBox!.y + composerBox!.height).toBeLessThanOrEqual(viewport.height);
-    await expectNoHorizontalOverflow(page);
-
-    await page.getByRole("button", { name: "加入购物车" }).click();
-    await expect(page.getByText("已加入助手购物车")).toBeVisible();
-    await expect(page.getByText("购物车版本 v1")).toBeVisible();
-
-    await page.getByRole("button", { name: "同步到朴朴购物车" }).click();
-    const sheet = page.getByRole("dialog", { name: "需要你的确认" });
-    await expect(sheet).toBeVisible();
+    await page.getByRole("button", { name: label }).click();
+    await expect(page.getByText(label, { exact: true })).toBeVisible();
+    await expect(page.getByTestId("journey-origin")).toBeVisible();
+    await expect(page.getByText("示例数据")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "加入购物车" })).toHaveCount(0);
+    await page.getByRole("button", { name: "返回首页" }).click();
     await expect(
-      page.getByRole("heading", { name: "确认同步到朴朴购物车" }),
+      page.getByRole("heading", { name: "今天想让我做什么？" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "长按确认" })).toBeVisible();
-    await expectNoHorizontalOverflow(page);
   }
 });
 
-test("high-risk requests rise in a dismissible bottom sheet", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("provider outcomes remain explicit without fabricated data", async ({
+  page,
+}) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "确认退款" }).click();
+  await page.getByRole("button", { name: "朴朴帮我买" }).click();
 
-  const sheet = page.getByRole("dialog", { name: "需要你的确认" });
-  await expect(sheet).toBeVisible();
-  await expect(page.locator(".agent-home h1")).toHaveText("今天想让我做什么？");
-  await expect(page.getByRole("heading", { name: "确认退款申请" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "关闭确认面板" })).toBeFocused();
-
-  const sheetBox = await sheet.boundingBox();
-  expect(sheetBox).not.toBeNull();
-  expect(sheetBox!.y + sheetBox!.height).toBeLessThanOrEqual(844);
-  const approval = page.getByRole("button", { name: "长按确认" });
-  await approval.hover();
-  await page.mouse.down();
-  await page.waitForTimeout(950);
-  await page.mouse.up();
-  await expect(sheet).toHaveCount(0);
-  await expectNoHorizontalOverflow(page);
+  await expect
+    .poll(
+      async () =>
+        (await page.getByRole("alert").count()) +
+        (await page.getByText("方案已准备好", { exact: true }).count()) +
+        (await page.locator(".pupu-purchase-card").count()),
+      { timeout: 20_000 },
+    )
+    .toBeGreaterThan(0);
+  if (await page.getByRole("alert").count()) {
+    await expect(page.getByRole("button", { name: "重试" })).toBeEnabled();
+  }
+  await expect(page.getByText("示例数据")).toHaveCount(0);
+  await expect(page.getByText("谷饲肥牛卷")).toHaveCount(0);
+  await expect(page.getByText("¥74.60 / ¥120")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "加入购物车" })).toHaveCount(0);
 });
 
-test("reduced motion keeps every presentation actionable", async ({ page }) => {
+test("reduced motion keeps the live canvas actionable", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "今晚吃什么" }).click();
-  await expect(page.getByRole("button", { name: "查看采购方案" })).toBeEnabled();
+
+  await expect(page.getByTestId("floating-composer")).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回首页" })).toBeEnabled();
 });
