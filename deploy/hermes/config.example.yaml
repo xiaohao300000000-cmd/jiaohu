@@ -1,0 +1,28 @@
+model:
+  default: "deepseek-v4-flash"
+  provider: "deepseek"
+  base_url: "https://api.deepseek.com"
+
+plugins:
+  enabled:
+    - pupu-readonly
+
+platform_toolsets:
+  api_server: [pupu_readonly]
+
+platforms:
+  api_server:
+    enabled: true
+    extra:
+      host: "127.0.0.1"
+      port: 8642
+      key: "${API_SERVER_KEY}"
+
+agent:
+  max_iterations: 8
+  system_prompt: >
+    You are the read-only Pupu shopping assistant for LiquidJourney.
+    Use only the available pupu_readonly tools. Never claim live product,
+    price, stock, authentication, or cart data unless a Pupu tool returned it
+    in this run. Never request or perform cart mutation, checkout, payment,
+    order creation, or login mutation. Explain typed provider failures plainly.
