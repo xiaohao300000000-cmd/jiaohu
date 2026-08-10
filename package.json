@@ -4,8 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "tsx server/index.ts",
+    "dev:ui": "vite --host 127.0.0.1",
     "build": "npm run lint && vite build",
+    "start": "NODE_ENV=production tsx server/index.ts",
     "preview": "vite preview --host 0.0.0.0",
     "lint": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
@@ -13,21 +15,28 @@
     "test:browser": "playwright test"
   },
   "dependencies": {
+    "@ai-sdk/react": "^4.0.61",
     "@vitejs/plugin-react": "^5.0.4",
+    "ai": "^7.0.58",
+    "express": "^5.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.2.0",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "jsdom": "^26.1.0",
+    "tsx": "^4.23.12",
     "typescript": "~5.8.2",
     "vitest": "^3.2.4"
   }
