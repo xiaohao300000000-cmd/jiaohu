@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
-from .provider import run_pupu
+from .provider import persist_run_result, run_pupu
 
 TOOLSET = "pupu_readonly"
 
@@ -72,9 +73,16 @@ TOOL_DEFINITIONS = [
 
 def register(ctx: Any) -> None:
     for name, operation, schema in TOOL_DEFINITIONS:
-        def handler(params, _operation=operation, **kwargs):
-            del kwargs
-            return run_pupu(_operation, dict(params or {}))
+        def handler(params, _operation=operation, _name=name, **kwargs):
+            result = run_pupu(_operation, dict(params or {}))
+            task_id = kwargs.get("task_id")
+            if (
+                isinstance(task_id, str)
+                and task_id
+                and os.environ.get("PUPU_RESULT_DIR")
+            ):
+                persist_run_result(result, task_id=task_id, tool_name=_name)
+            return result
 
         ctx.register_tool(
             name=name,

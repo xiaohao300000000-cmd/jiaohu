@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -30,6 +32,7 @@ SENSITIVE_KEYS = {
     "sign",
     "token",
 }
+SAFE_RESULT_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
 class CompletedProcess(Protocol):
@@ -171,6 +174,42 @@ def parse_cli_output(output: str) -> str:
         )
     safe = _redact(envelope.model_dump(mode="json"))
     return json.dumps(safe, ensure_ascii=False)
+
+def persist_run_result(
+    result_json: str,
+    *,
+    task_id: str,
+    tool_name: str,
+) -> Path:
+    if not SAFE_RESULT_KEY.fullmatch(task_id):
+        raise ValueError("unsafe task_id")
+    if not SAFE_RESULT_KEY.fullmatch(tool_name):
+        raise ValueError("unsafe tool_name")
+
+    root = Path(
+        os.environ.get("PUPU_RESULT_DIR", "/home/pupu/.hermes/run-artifacts")
+    )
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    root.chmod(0o700)
+
+    validated = json.loads(parse_cli_output(result_json))
+    payload = {
+        "task_id": task_id,
+        "tool_name": tool_name,
+        "result": validated,
+    }
+    destination = root / f"{task_id}.json"
+    temporary = root / f".{task_id}.{os.getpid()}.tmp"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+        os.replace(temporary, destination)
+        destination.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return destination
 
 
 def run_pupu(

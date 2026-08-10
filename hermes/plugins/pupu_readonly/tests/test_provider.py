@@ -1,9 +1,11 @@
 import json
 import subprocess
+import pytest
 
 from hermes.plugins.pupu_readonly.provider import (
     build_argv,
     parse_cli_output,
+    persist_run_result,
     run_pupu,
 )
 
@@ -104,3 +106,39 @@ def test_rejects_non_json_and_oversized_output():
 
     assert invalid["error"]["code"] == "invalid_provider_output"
     assert oversized["error"]["code"] == "provider_output_too_large"
+
+def test_persists_validated_result_by_safe_task_id(tmp_path, monkeypatch):
+    monkeypatch.setenv("PUPU_RESULT_DIR", str(tmp_path))
+    envelope = json.dumps(
+        {
+            "schema_version": "1",
+            "ok": True,
+            "operation": "pupu.capabilities",
+            "request_id": "provider-1",
+            "household_id": None,
+            "status": "succeeded",
+            "data": {"operations": []},
+            "error": None,
+            "next_actions": [],
+            "evidence_ref": None,
+        }
+    )
+
+    path = persist_run_result(
+        envelope,
+        task_id="session-1",
+        tool_name="pupu_capabilities",
+    )
+
+    saved = json.loads(path.read_text())
+    assert saved["task_id"] == "session-1"
+    assert saved["tool_name"] == "pupu_capabilities"
+    assert saved["result"]["operation"] == "pupu.capabilities"
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_rejects_unsafe_task_id_for_result_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("PUPU_RESULT_DIR", str(tmp_path))
+
+    with pytest.raises(ValueError, match="unsafe task_id"):
+        persist_run_result("{}", task_id="../escape", tool_name="pupu_read_cart")
