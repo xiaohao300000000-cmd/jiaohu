@@ -174,6 +174,7 @@ describe("mapHermesEvent", () => {
         tool_call_id: "call-invalid",
         output: {
           schema_version: "1",
+
           ok: true,
           operation: "pupu.catalog.search",
           request_id: "provider-invalid",
@@ -196,6 +197,51 @@ describe("mapHermesEvent", () => {
       error: {
         kind: "invalid_result",
         message: "实时商品数据格式不正确。",
+      },
+    });
+    expect(JSON.stringify(mapped)).not.toContain('"dataSource":"live"');
+  });
+  it("surfaces real auth_required without fabricating live products", () => {
+    const context = createHermesEventContext(requestId, "query", runId);
+    mapHermesEvent(
+      {
+        type: "tool.started",
+        run_id: runId,
+        tool_name: "pupu_auth_status",
+        tool_call_id: "auth-call",
+      },
+      context,
+    );
+
+    const mapped = mapHermesEvent(
+      {
+        type: "tool.completed",
+        run_id: runId,
+        tool_name: "pupu_auth_status",
+        tool_call_id: "auth-call",
+        output: {
+          schema_version: "1",
+          ok: true,
+          operation: "pupu.login.status",
+          request_id: "auth-status-1",
+          household_id: "household-1",
+          status: "auth_required",
+          data: { auth_present: false, auth_saved: false },
+          error: null,
+          next_actions: ["pupu.login.request_code"],
+          evidence_ref: null,
+        },
+      },
+      context,
+    );
+
+    expect(mapped).toEqual({
+      type: "stream.failed",
+      requestId,
+      error: {
+        kind: "provider",
+        message: "朴朴登录状态已失效，需要先恢复真实登录态。",
+        reference: "auth-status-1",
       },
     });
     expect(JSON.stringify(mapped)).not.toContain('"dataSource":"live"');

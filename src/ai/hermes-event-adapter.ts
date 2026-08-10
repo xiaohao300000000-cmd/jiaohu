@@ -175,6 +175,18 @@ function safeReference(error: unknown): string | undefined {
   return undefined;
 }
 
+
+function safeErrorKind(error: unknown): "provider" | "invalid_result" {
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "kind" in error &&
+    (error as { kind: unknown }).kind === "invalid_result"
+  ) {
+    return "invalid_result";
+  }
+  return "provider";
+}
 function invalidResult(requestId: string): JourneyEvent {
   return {
     type: "stream.failed",
@@ -201,8 +213,8 @@ function mapPupuOutput(
 
   const envelope = cliEnvelopeSchema.safeParse(rawOutput);
   if (!envelope.success) return invalidResult(context.requestId);
-  if (!envelope.data.ok) {
-    const authRequired = envelope.data.status === "auth_required";
+  const authRequired = envelope.data.status === "auth_required";
+  if (authRequired || !envelope.data.ok) {
     return {
       type: "stream.failed",
       requestId: context.requestId,
@@ -213,6 +225,18 @@ function mapPupuOutput(
           : "朴朴实时服务返回失败，请稍后重试。",
         reference: envelope.data.request_id,
       },
+    };
+  }
+
+  if (
+    event.tool_name !== "pupu_search_catalog" &&
+    event.tool_name !== "pupu_get_product" &&
+    event.tool_name !== "pupu_read_cart"
+  ) {
+    return {
+      type: "trace.updated",
+      requestId: context.requestId,
+      entries: context.trace,
     };
   }
 
@@ -303,16 +327,21 @@ export function mapHermesEvent(
         requestId: context.requestId,
         result: journeyResult(context.products, event.output?.summary),
       };
-    case "run.failed":
+    case "run.failed": {
+      const kind = safeErrorKind(event.error);
       return {
         type: "stream.failed",
         requestId: context.requestId,
         error: {
-          kind: "provider",
-          message: "实时服务暂时不可用，请稍后重试。",
+          kind,
+          message:
+            kind === "invalid_result"
+              ? "实时事件格式不正确。"
+              : "实时服务暂时不可用，请稍后重试。",
           reference: safeReference(event.error),
         },
       };
+    }
     case "run.cancelled":
       return {
         type: "stream.interrupted",
