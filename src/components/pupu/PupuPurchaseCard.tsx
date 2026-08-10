@@ -16,12 +16,14 @@ import "./pupu-purchase.css";
 
 interface PupuPurchaseCardProps {
   event: AgentUIEvent<PupuPurchasePayload>;
-  onAddToCart: () => void;
+  onAddToCart?: () => void;
+  readOnly?: boolean;
 }
 
 export function PupuPurchaseCard({
   event,
   onAddToCart,
+  readOnly = false,
 }: PupuPurchaseCardProps) {
   const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
   const [evidenceOpen, setEvidenceOpen] = useState(false);
@@ -150,12 +152,14 @@ export function PupuPurchaseCard({
         )}
       </AnimatePresence>
 
-      <footer className="pupu-purchase-card__footer">
-        <button type="button" onClick={onAddToCart}>
-          <ShoppingBasket size={17} strokeWidth={1.9} aria-hidden="true" />
-          加入购物车
-        </button>
-      </footer>
+      {!readOnly && onAddToCart && (
+        <footer className="pupu-purchase-card__footer">
+          <button type="button" onClick={onAddToCart}>
+            <ShoppingBasket size={17} strokeWidth={1.9} aria-hidden="true" />
+            加入购物车
+          </button>
+        </footer>
+      )}
     </motion.article>
   );
 }

@@ -1,153 +1,143 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+} from "ai";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { JourneyUIMessage } from "./ai/journey-ui-message";
 import App from "./App";
 
-describe("universal Agent home", () => {
-  it("starts as a universal home instead of autoplaying dinner", () => {
+function liveResponse(requestId: string, includePupu = false): Response {
+  const stream = createUIMessageStream<JourneyUIMessage>({
+    execute({ writer }) {
+      writer.write({
+        type: "data-journey",
+        data: { type: "stream.started", requestId },
+      });
+      if (includePupu) {
+        writer.write({
+          type: "data-pupu",
+          data: {
+            runId: "run-live-1",
+            capability: "pupu",
+            intent: "pupu.readonly_plan",
+            presentationMode: "canvas",
+            component: "pupu.purchase-plan",
+            state: "assembling",
+            dataSource: "live",
+            payload: {
+              stage: "cart_ready",
+              title: "朴朴实时商品方案",
+              summary: "本次实时查询结果",
+              meal: "按需采购",
+              people: 1,
+              budget: 12.9,
+              constraints: ["仅使用实时数据", "首版只读"],
+              decisionSummary: "商品、价格与库存来自朴朴 CLI 实时读取。",
+              products: [
+                {
+                  productId: "store-1",
+                  name: "鲜牛奶",
+                  specification: "950ml",
+                  unitPrice: 12.9,
+                  quantity: 1,
+                  currency: "CNY",
+                  stockStatus: "in_stock",
+                  collectedAt: "2026-08-10T00:00:00.000Z",
+                },
+              ],
+              total: 12.9,
+              currency: "CNY",
+              cartVersion: 0,
+              estimatedDelivery: "以朴朴实时页面为准",
+            },
+            occurredAt: "2026-08-10T00:00:00.000Z",
+          },
+        });
+      }
+      writer.write({
+        type: "data-journey",
+        data: {
+          type: "stream.finished",
+          requestId,
+          result: {
+            title: "朴朴实时方案",
+            summary: "实时查询完成",
+            totalAmount: includePupu ? 12.9 : 0,
+            currency: "CNY",
+            items: includePupu
+              ? [
+                  {
+                    id: "store-1",
+                    name: "鲜牛奶",
+                    detail: "950ml",
+                    price: 12.9,
+                  },
+                ]
+              : [],
+          },
+        },
+      });
+    },
+  });
+  return createUIMessageStreamResponse({ stream });
+}
+
+function installLiveFetch(includePupu = false) {
+  const fetchMock = vi.fn(async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    return liveResponse(body.requestId, includePupu);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("live Agent home", () => {
+  it("starts on the universal home with the real read-only channel disclosed", () => {
+    installLiveFetch();
     render(<App />);
 
     expect(
       screen.getByRole("heading", { name: "今天想让我做什么？" }),
     ).toBeVisible();
     expect(
-      screen.queryByText("把需求变成今晚的安排"),
-    ).not.toBeInTheDocument();
+      screen.getByText("Hermes 实时通道 · 朴朴首版只读模式"),
+    ).toBeVisible();
   });
 
-  it("anchors parcel results directly below the composer", async () => {
+  it("routes every submitted task onto the live canvas", async () => {
+    installLiveFetch();
     const user = userEvent.setup();
     render(<App />);
 
     await user.type(screen.getByLabelText("输入生活指令"), "查一下我的快递");
     await user.click(screen.getByRole("button", { name: "发送指令" }));
 
-    const composer = screen.getByTestId("home-composer");
-    const result = await screen.findByTestId("anchored-result");
-    expect(
-      composer.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(result).toHaveTextContent("你的包裹正在派送");
-    expect(result).toHaveTextContent("示例数据");
-  });
-
-  it("offers Pupu order status as a first-class home action", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.type(screen.getByLabelText("输入生活指令"), "查一下我的朴朴订单");
-    await user.click(screen.getByRole("button", { name: "发送指令" }));
-
-    expect(await screen.findByTestId("anchored-result")).toHaveTextContent(
-      "朴朴订单正在配送",
-    );
-  });
-
-  it("generates a Pupu product plan from the core Agent input", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(screen.getByRole("button", { name: "朴朴帮我买" }));
-
-    expect(
-      await screen.findByRole("heading", { name: "火锅 · 2 人" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("¥74.60 / ¥120")).toBeInTheDocument();
-    expect(screen.getByText("Agent 决策已完成")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返回首页" })).toBeInTheDocument();
-    expect(screen.queryByText("示例数据")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "加入购物车" })).toBeInTheDocument();
-  });
-
-  it("keeps the submitted sentence as the source of the task object", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    const input = screen.getByLabelText("输入生活指令");
-    expect(input).toHaveAttribute("data-layout-id", "journey-request-text");
-    await user.type(input, "两个人今晚火锅，120以内");
-    await user.click(screen.getByRole("button", { name: "发送指令" }));
-
     expect(await screen.findByText("来自你的输入")).toBeInTheDocument();
-    expect(screen.getByText("两个人今晚火锅，120以内")).toBeInTheDocument();
-    expect(screen.getByTestId("journey-origin")).toHaveAttribute(
-      "data-layout-id",
-      "journey-origin",
-    );
-  });
-
-  it("turns the plan into a versioned assistant cart", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(screen.getByRole("button", { name: "朴朴帮我买" }));
-    await user.click(await screen.findByRole("button", { name: "加入购物车" }));
-
-    expect(await screen.findByText("已加入助手购物车")).toBeInTheDocument();
-    expect(screen.getByText("购物车版本 v1")).toBeInTheDocument();
-  });
-
-  it("requires approval before syncing the real Pupu cart", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.click(screen.getByRole("button", { name: "朴朴帮我买" }));
-    await user.click(await screen.findByRole("button", { name: "加入购物车" }));
-    await user.click(
-      await screen.findByRole("button", { name: "同步到朴朴购物车" }),
-    );
-
-    expect(
-      screen.getByRole("dialog", { name: "需要你的确认" }),
-    ).toBeInTheDocument();
-    expect(await screen.findByText("确认同步到朴朴购物车")).toBeInTheDocument();
-  });
-
-  it("moves complex planning requests onto the central canvas", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.type(screen.getByLabelText("输入生活指令"), "今晚两个人吃什么");
-    await user.click(screen.getByRole("button", { name: "发送指令" }));
-
-    expect(
-      await screen.findByRole("heading", {
-        name: "把需求变成一份可执行的方案",
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/今晚两个人吃什么/)).toBeInTheDocument();
+    expect(screen.getByText("查一下我的快递")).toBeInTheDocument();
+    expect(screen.queryByTestId("anchored-result")).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(
-        screen.queryByRole("heading", { name: "今天想让我做什么？" }),
-      ).not.toBeInTheDocument(),
+      expect(screen.getByText("Agent 决策已完成")).toBeVisible(),
     );
   });
 
-  it("keeps the task composer in a separate floating layer", async () => {
+  it("renders only streamed live Pupu data and exposes no cart mutation", async () => {
+    installLiveFetch(true);
     const user = userEvent.setup();
     render(<App />);
 
-    await user.type(screen.getByLabelText("输入生活指令"), "今晚两个人吃什么");
-    await user.click(screen.getByRole("button", { name: "发送指令" }));
-
-    const composer = await screen.findByTestId("floating-composer");
-    expect(composer).toHaveClass("floating-composer");
-    expect(composer.closest('[data-testid="journey-origin"]')).toBeNull();
-    expect(screen.getByTestId("task-scroll-space")).toBeInTheDocument();
-  });
-
-  it("keeps the home behind a bottom sheet for high-risk requests", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.type(screen.getByLabelText("输入生活指令"), "确认退款");
-    await user.click(screen.getByRole("button", { name: "发送指令" }));
+    await user.click(screen.getByRole("button", { name: "朴朴帮我买" }));
 
     expect(
-      screen.getByRole("dialog", { name: "需要你的确认" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "今天想让我做什么？" }),
-    ).toBeInTheDocument();
+      await screen.findByRole("heading", { name: "按需采购 · 1 人" }),
+    ).toBeVisible();
+    expect(screen.getByText("¥12.90 / ¥12.9")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "加入购物车" })).toBeNull();
+    expect(screen.queryByText("示例数据")).toBeNull();
   });
 });

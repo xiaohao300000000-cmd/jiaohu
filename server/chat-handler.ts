@@ -91,8 +91,17 @@ export async function handleChatRequest(
     );
   }
 
+  const requestedId =
+    body !== null &&
+    typeof body === "object" &&
+    "requestId" in body &&
+    typeof (body as { requestId: unknown }).requestId === "string"
+      ? (body as { requestId: string }).requestId
+      : null;
   const sessionId =
-    dependencies.createId?.() || `journey-${crypto.randomUUID()}`;
+    requestedId && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(requestedId)
+      ? requestedId
+      : dependencies.createId?.() || `journey-${crypto.randomUUID()}`;
   const config = getHermesConfig();
   const createRun =
     dependencies.createRun ||

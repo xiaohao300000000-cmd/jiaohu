@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { HermesRunEvent } from "../src/ai/hermes-event-adapter";
 import { handleChatRequest } from "./chat-handler";
 
@@ -55,6 +55,7 @@ describe("handleChatRequest", () => {
     const request = new Request("http://localhost/api/chat", {
       method: "POST",
       body: JSON.stringify({
+        requestId: "journey-client-1",
         messages: [
           {
             id: "message-1",
@@ -66,8 +67,9 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
 
+    const createRun = vi.fn(async () => ({ runId: "run-1" }));
     const response = await handleChatRequest(request, {
-      createRun: async () => ({ runId: "run-1" }),
+      createRun,
       streamRun: () => events(),
       readRunArtifact: async () => liveEnvelope,
       createId: () => "session-1",
@@ -80,6 +82,9 @@ describe("handleChatRequest", () => {
     expect(body).toContain('"type":"data-pupu"');
     expect(body).toContain('"dataSource":"live"');
     expect(body).not.toMatch(/authorization|cookie|reasoning_content|secret/i);
+    expect(createRun).toHaveBeenCalledWith(
+      "帮我找牛奶", "journey-client-1", expect.any(AbortSignal),
+    );
   });
 
   it("returns a safe typed error for an invalid request", async () => {
