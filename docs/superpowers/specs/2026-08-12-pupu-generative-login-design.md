@@ -1,7 +1,7 @@
 # Pupu Generative Login Design
 
 **Date:** 2026-08-12
-**Status:** Approved in conversation; awaiting written-spec review
+**Status:** Approved for implementation
 
 ## Goal
 

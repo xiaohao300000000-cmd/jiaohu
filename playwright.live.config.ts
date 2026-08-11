@@ -3,7 +3,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/live",
   fullyParallel: false,
-  timeout: 90_000,
+  timeout: 600_000,
   expect: {
     timeout: 60_000,
   },
@@ -21,7 +21,10 @@ export default defineConfig({
   projects: [
     {
       name: "chromium-live",
-      use: { browserName: "chromium" },
+      use: {
+        browserName: "chromium",
+        headless: process.env.PUPU_LIVE_MANUAL !== "1",
+      },
     },
   ],
 });
