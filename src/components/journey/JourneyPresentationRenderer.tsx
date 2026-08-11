@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { LiquidJourney } from "./LiquidJourney";
 import type { JourneyPresentation, JourneySnapshot } from "./types";
 import { PupuPurchaseCard } from "../pupu/PupuPurchaseCard";
+import { PupuLoginJourney } from "../pupu/PupuLoginJourney";
 
 type PupuPresentation = Extract<
   JourneyPresentation,
@@ -33,13 +34,36 @@ const presentationRenderers = {
 interface JourneyPresentationRendererProps {
   snapshot: JourneySnapshot;
   onRetry?: () => void;
+  onLoginPhone?: (phone: string) => void;
+  onLoginCode?: (code: string) => void;
+  onLoginCaptchaComplete?: () => void;
+  onLoginResend?: () => void;
+  onLoginCancel?: () => void;
 }
 
 export function JourneyPresentationRenderer({
   snapshot,
   onRetry,
+  onLoginPhone,
+  onLoginCode,
+  onLoginCaptchaComplete,
+  onLoginResend,
+  onLoginCancel,
 }: JourneyPresentationRendererProps) {
   const presentation = snapshot.presentation;
+  if (presentation?.component === "pupu.login") {
+    return (
+      <PupuLoginJourney
+        instanceId={snapshot.activeRequestId || "idle"}
+        presentation={presentation.payload}
+        onPhoneSubmit={onLoginPhone}
+        onCodeSubmit={onLoginCode}
+        onCaptchaComplete={onLoginCaptchaComplete}
+        onResend={onLoginResend}
+        onCancel={onLoginCancel}
+      />
+    );
+  }
   if (presentation?.component === "pupu.purchase-plan") {
     return presentationRenderers["pupu.purchase-plan"](presentation, {
       instanceId: snapshot.activeRequestId || "idle",

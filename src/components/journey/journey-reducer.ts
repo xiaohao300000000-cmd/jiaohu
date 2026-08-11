@@ -59,12 +59,22 @@ export function journeyReducer(
         runId: event.runId,
         error: null,
       };
-    case "presentation.updated":
+    case "presentation.updated": {
+      const loginPhase =
+        event.presentation.component === "pupu.login"
+          ? event.presentation.payload.phase
+          : null;
+      const state = loginPhase
+        ? (["phone", "captcha", "sms", "error"].includes(loginPhase)
+            ? "awaiting_input"
+            : "reasoning")
+        : "assembling";
       return {
         ...snapshot,
-        state: "assembling",
+        state,
         presentation: event.presentation,
       };
+    }
     case "trace.updated":
       return { ...snapshot, state: "reasoning", trace: event.entries };
     case "result.partial":
