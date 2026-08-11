@@ -1,7 +1,4 @@
-import {
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-} from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import {
   createHermesEventContext,
   mapHermesEvent,
@@ -9,11 +6,12 @@ import {
 } from "../src/ai/hermes-event-adapter";
 import type { JourneyUIMessage } from "../src/ai/journey-ui-message";
 import { getHermesConfig } from "./config";
+import { createHermesRun, streamHermesRun } from "./hermes-client";
 import {
-  createHermesRun,
-  readRunArtifact,
-  streamHermesRun,
-} from "./hermes-client";
+  readToolArtifact,
+  type ToolArtifactIdentity,
+  type ToolArtifactReadResult,
+} from "./tool-artifact";
 
 interface ChatDependencies {
   createRun?: (
@@ -25,7 +23,9 @@ interface ChatDependencies {
     runId: string,
     signal?: AbortSignal,
   ) => AsyncIterable<HermesRunEvent>;
-  readRunArtifact?: (sessionId: string) => Promise<unknown | null>;
+  readToolArtifact?: (
+    identity: ToolArtifactIdentity,
+  ) => Promise<ToolArtifactReadResult>;
   createId?: () => string;
 }
 
@@ -100,7 +100,7 @@ export async function handleChatRequest(
     dependencies.streamRun ||
     ((runId: string, signal?: AbortSignal) =>
       streamHermesRun(runId, config, signal));
-  const artifactReader = dependencies.readRunArtifact || readRunArtifact;
+  const artifactReader = dependencies.readToolArtifact || readToolArtifact;
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {
@@ -113,12 +113,30 @@ export async function handleChatRequest(
       );
       if (started) writer.write({ type: "data-journey", data: started });
 
+      let toolSequence = 0;
       for await (const sourceEvent of streamRun(runId, request.signal)) {
         let event = sourceEvent;
-        if (sourceEvent.type === "tool.completed") {
+        if (
+          sourceEvent.type === "tool.completed" &&
+          sourceEvent.tool_name.startsWith("pupu_")
+        ) {
+          toolSequence += 1;
+          const artifact = await artifactReader({
+            sessionId,
+            runId,
+            toolCallId: sourceEvent.tool_call_id,
+            toolName: sourceEvent.tool_name,
+            sequence: toolSequence,
+          });
           event = {
             ...sourceEvent,
-            output: await artifactReader(sessionId),
+            output:
+              artifact.status === "ok"
+                ? artifact.result
+                : {
+                    kind: "invalid_result",
+                    artifactStatus: artifact.status,
+                  },
           };
         }
         const mapped = mapHermesEvent(event, context);

@@ -81,7 +81,15 @@ def register(ctx: Any) -> None:
                 and task_id
                 and os.environ.get("PUPU_RESULT_DIR")
             ):
-                persist_run_result(result, task_id=task_id, tool_name=_name)
+                run_id = kwargs.get("run_id")
+                tool_call_id = kwargs.get("tool_call_id")
+                persist_run_result(
+                    result,
+                    task_id=task_id,
+                    tool_name=_name,
+                    run_id=run_id if isinstance(run_id, str) else None,
+                    tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+                )
             return result
 
         ctx.register_tool(

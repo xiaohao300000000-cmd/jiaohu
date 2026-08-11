@@ -1,5 +1,3 @@
-import { readFile, unlink } from "node:fs/promises";
-import path from "node:path";
 import type { HermesRunEvent } from "../src/ai/hermes-event-adapter";
 import type { HermesClientConfig } from "./config";
 
@@ -201,27 +199,5 @@ export async function stopHermesRun(
   );
   if (!response.ok) {
     throw new Error(`Hermes stop failed (${response.status})`);
-  }
-}
-
-const safeArtifactKey = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
-
-export async function readRunArtifact(
-  sessionId: string,
-  resultDir = process.env.PUPU_RESULT_DIR ||
-    "/home/pupu/.hermes/run-artifacts",
-): Promise<unknown | null> {
-  if (!safeArtifactKey.test(sessionId)) return null;
-  const artifactPath = path.join(resultDir, `${sessionId}.json`);
-  try {
-    const content = await readFile(artifactPath, "utf8");
-    await unlink(artifactPath);
-    const parsed = JSON.parse(content) as {
-      task_id?: unknown;
-      result?: unknown;
-    };
-    return parsed.task_id === sessionId ? parsed.result ?? null : null;
-  } catch {
-    return null;
   }
 }
