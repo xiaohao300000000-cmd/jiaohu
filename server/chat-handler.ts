@@ -27,6 +27,8 @@ interface ChatDependencies {
     identity: ToolArtifactIdentity,
   ) => Promise<ToolArtifactReadResult>;
   createId?: () => string;
+  preparePupuScope?: (request: Request, sessionId: string) => Promise<void>;
+  cleanupPupuScope?: (sessionId: string) => Promise<void>;
 }
 
 function extractInput(body: unknown): string | null {
@@ -104,7 +106,12 @@ export async function handleChatRequest(
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {
+      let scopePrepared = false;
       try {
+        if (dependencies.preparePupuScope) {
+          await dependencies.preparePupuScope(request, sessionId);
+          scopePrepared = true;
+        }
         const { runId } = await createRun(input, sessionId, request.signal);
         writer.write({ type: "message-metadata", messageMetadata: { runId } });
         const context = createHermesEventContext(sessionId, input, runId);
@@ -147,6 +154,11 @@ export async function handleChatRequest(
       } catch (error) {
         if (request.signal.aborted) return;
         throw error;
+      }
+      finally {
+        if (scopePrepared && dependencies.cleanupPupuScope) {
+          await dependencies.cleanupPupuScope(sessionId);
+        }
       }
     },
     onError: () => "实时服务暂时不可用，请稍后重试。",

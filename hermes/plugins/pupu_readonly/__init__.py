@@ -74,8 +74,13 @@ TOOL_DEFINITIONS = [
 def register(ctx: Any) -> None:
     for name, operation, schema in TOOL_DEFINITIONS:
         def handler(params, _operation=operation, _name=name, **kwargs):
-            result = run_pupu(_operation, dict(params or {}))
             task_id = kwargs.get("task_id")
+            arguments = dict(params or {})
+            arguments.pop("_trusted_task_id", None)
+            arguments.pop("_trusted_scope", None)
+            if isinstance(task_id, str) and task_id:
+                arguments["_trusted_task_id"] = task_id
+            result = run_pupu(_operation, arguments)
             if (
                 isinstance(task_id, str)
                 and task_id

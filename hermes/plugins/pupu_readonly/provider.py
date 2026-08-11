@@ -14,6 +14,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from .schemas import CliEnvelope
+from .scope_ticket import ScopeTicketError, TrustedPupuScope, consume_scope_ticket
 
 MAX_OUTPUT_BYTES = 1_000_000
 READ_ONLY_OPERATIONS = {
@@ -108,12 +109,18 @@ def _append_shared_scope(argv: list[str], arguments: dict[str, object]) -> None:
         raise ValueError("request_id must be a non-empty string")
     argv.extend(["--request-id", request_id or str(uuid4())])
 
-    household_id = arguments.get("household_id") or os.environ.get("PUPU_HOUSEHOLD_ID")
-    data_dir = arguments.get("data_root") or os.environ.get("PUPU_DATA_DIR")
-    if not isinstance(household_id, str) or not household_id:
-        raise ValueError("PUPU_HOUSEHOLD_ID is required")
-    if not isinstance(data_dir, str) or not data_dir:
-        raise ValueError("PUPU_DATA_DIR is required")
+    trusted_scope = arguments.get("_trusted_scope")
+    if isinstance(trusted_scope, TrustedPupuScope):
+        argv.extend([
+            "--account-id", trusted_scope.account_id,
+            "--accounts-root", str(trusted_scope.accounts_root),
+            "--data-root", str(trusted_scope.data_root),
+        ])
+        return
+    household_id = os.environ.get("PUPU_HOUSEHOLD_ID")
+    data_dir = os.environ.get("PUPU_DATA_DIR")
+    if not household_id or not data_dir:
+        raise ValueError("trusted Pupu scope is required")
     argv.extend(["--household-id", household_id, "--data-root", data_dir])
 
 
@@ -291,10 +298,24 @@ def run_pupu(
             "operation_not_allowed", "Only read-only Pupu operations are enabled"
         )
     try:
-        argv = build_argv(operation, arguments)
+        scoped_arguments = dict(arguments)
+        if operation != "capabilities":
+            task_id = scoped_arguments.pop("_trusted_task_id", None)
+            if not isinstance(task_id, str) or not task_id:
+                raise ScopeTicketError("scope ticket task identity is missing")
+            ticket_root = Path(
+                os.environ.get(
+                    "PUPU_SCOPE_TICKET_DIR",
+                    "/home/pupu/.local/state/jiaohu/pupu-login/scope-tickets",
+                )
+            )
+            scoped_arguments["_trusted_scope"] = consume_scope_ticket(ticket_root, task_id)
+        argv = build_argv(operation, scoped_arguments)
         completed = runner(
             argv, timeout=provider_timeout_seconds(), max_output_bytes=MAX_OUTPUT_BYTES
         )
+    except ScopeTicketError:
+        return error_json("scope_ticket_invalid", "Pupu account scope is unavailable")
     except ProviderConfigurationError as exc:
         return error_json("invalid_configuration", str(exc))
     except ValueError as exc:
