@@ -67,6 +67,28 @@ describe("PupuLoginController", () => {
     expect(execute.mock.calls[2][1]).toEqual({ kind: "status" });
     expect(JSON.stringify(result)).not.toContain("654321");
   });
+  it("enforces resend cooldown before invoking the CLI", async () => {
+    let now = 1000;
+    const execute = vi.fn().mockResolvedValue({ ok: true, status: "sms_requested" });
+    const controller = new PupuLoginController({
+      execute,
+      now: () => now,
+      attemptTtlMs: 60_000,
+      resendCooldownMs: 30_000,
+    });
+    await controller.start("session-a", scope, "13000000000");
+
+    const throttled = await controller.resend("session-a");
+    expect(throttled.phase).toBe("sms");
+    expect(throttled.retryAfterSeconds).toBe(30);
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    now = 31_001;
+    const sent = await controller.resend("session-a");
+    expect(sent.phase).toBe("sms");
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
 
   it("isolates attempts and cancels only the current session", async () => {
     const execute = vi.fn().mockResolvedValue({ ok: true, status: "sms_requested" });

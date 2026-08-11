@@ -27,7 +27,7 @@ interface ChatDependencies {
     identity: ToolArtifactIdentity,
   ) => Promise<ToolArtifactReadResult>;
   createId?: () => string;
-  preparePupuScope?: (request: Request, sessionId: string) => Promise<void>;
+  preparePupuScope?: (request: Request, sessionId: string, input: string) => Promise<void>;
   cleanupPupuScope?: (sessionId: string) => Promise<void>;
 }
 
@@ -109,7 +109,7 @@ export async function handleChatRequest(
       let scopePrepared = false;
       try {
         if (dependencies.preparePupuScope) {
-          await dependencies.preparePupuScope(request, sessionId);
+          await dependencies.preparePupuScope(request, sessionId, input);
           scopePrepared = true;
         }
         const { runId } = await createRun(input, sessionId, request.signal);

@@ -33,8 +33,22 @@ describe("PupuSessionStore", () => {
     const two = await store.resolve();
     const tampered = await store.resolve(one.token + "x");
 
+
     expect(new Set([one.accountId, two.accountId, tampered.accountId]).size).toBe(3);
     expect(tampered.token).not.toBe(one.token);
+  });
+  it("logs out only the exact resolved account", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pupu-session-"));
+    const store = new PupuSessionStore({ root, accountsRoot: join(root, "accounts") });
+    const one = await store.resolve();
+    const two = await store.resolve();
+    await store.remove(one);
+
+    await expect(stat(one.accountDir)).rejects.toThrow();
+    await expect(stat(two.accountDir)).resolves.toBeDefined();
+    const replacement = await store.resolve(one.token);
+    expect(replacement.accountId).not.toBe(one.accountId);
+    expect(replacement.created).toBe(true);
   });
 });
 

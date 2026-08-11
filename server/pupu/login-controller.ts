@@ -164,6 +164,38 @@ export class PupuLoginController {
     };
   }
 
+  async resend(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<PupuLoginState> {
+    const attempt = this.current(sessionId);
+    if (!attempt || attempt.phase !== "sms") return { phase: "auth_required" };
+    const remaining = attempt.resendAt - this.now();
+    if (remaining > 0) {
+      return {
+        phase: "sms",
+        attemptId: attempt.id,
+        expiresAt: new Date(attempt.expiresAt).toISOString(),
+        retryAfterSeconds: Math.ceil(remaining / 1000),
+      };
+    }
+    const result = await this.execute(
+      attempt.scope, { kind: "request", phone: attempt.phone }, signal,
+    );
+    if (!isSmsRequested(result)) {
+      return {
+        phase: "error",
+        error: { code: "sms_not_requested", message: "Pupu did not request an SMS.", retryable: true },
+      };
+    }
+    attempt.resendAt = this.now() + this.options.resendCooldownMs;
+    return {
+      phase: "sms",
+      attemptId: attempt.id,
+      expiresAt: new Date(attempt.expiresAt).toISOString(),
+      retryAfterSeconds: Math.ceil(this.options.resendCooldownMs / 1000),
+    };
+  }
   async verify(
     sessionId: string,
     code: string,

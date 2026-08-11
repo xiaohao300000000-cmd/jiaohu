@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -97,5 +97,19 @@ export class PupuSessionStore {
     }
     return { token, accountId, accountDir, recordPath, created: true };
   }
+
+  async remove(session: ResolvedPupuSession): Promise<void> {
+    const expectedRecord = this.recordPath(tokenHash(session.token));
+    const expectedAccount = join(this.options.accountsRoot, session.accountId);
+    if (
+      !ACCOUNT_PATTERN.test(session.accountId) ||
+      session.recordPath !== expectedRecord ||
+      session.accountDir !== expectedAccount
+    ) {
+      throw new Error("unsafe Pupu session removal");
+    }
+    await unlink(expectedRecord).catch(() => undefined);
+    await rm(expectedAccount, { recursive: true, force: true });
+}
 }
 
