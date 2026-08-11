@@ -7,27 +7,45 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-import type {
-  AgentUIEvent,
-  PupuPurchasePayload,
-} from "../agent/agent-ui-event";
+import type { JourneyPresentation } from "../journey/types";
 import { JOURNEY_SPRINGS } from "../../config/motion";
 import "./pupu-purchase.css";
 
+type PupuPresentation = Extract<
+  JourneyPresentation,
+  { component: "pupu.purchase-plan" }
+>;
+
 interface PupuPurchaseCardProps {
-  event: AgentUIEvent<PupuPurchasePayload>;
+  presentation: PupuPresentation;
+  instanceId: string;
   onAddToCart?: () => void;
   readOnly?: boolean;
 }
 
 export function PupuPurchaseCard({
-  event,
+  presentation,
+  instanceId,
   onAddToCart,
   readOnly = false,
 }: PupuPurchaseCardProps) {
-  const [failedImages, setFailedImages] = useState<Set<string>>(() => new Set());
+  const [failedImages, setFailedImages] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const { payload } = event;
+  const { payload } = presentation;
+  const estimatedTotal = Number.isFinite(payload.estimatedTotal)
+    ? Math.max(0, payload.estimatedTotal)
+    : 0;
+  const userBudget =
+    typeof payload.userBudget === "number" &&
+    Number.isFinite(payload.userBudget) &&
+    payload.userBudget > 0
+      ? payload.userBudget
+      : null;
+  const budgetPercent = userBudget
+    ? Math.min(100, (estimatedTotal / userBudget) * 100)
+    : null;
 
   const markImageFailed = (productId: string) => {
     setFailedImages((current) => new Set(current).add(productId));
@@ -37,7 +55,9 @@ export function PupuPurchaseCard({
     <motion.article
       className="pupu-purchase-card"
       aria-labelledby="pupu-purchase-title"
-      layoutId="pupu-purchase-surface"
+      data-component={presentation.component}
+      data-source={presentation.dataSource}
+      layoutId={`journey-${instanceId}-pupu-surface`}
       transition={JOURNEY_SPRINGS.groundedSettle}
     >
       <header className="pupu-decision">
@@ -48,8 +68,11 @@ export function PupuPurchaseCard({
 
         <div className="pupu-decision__facts" aria-label="方案关键数据">
           <div>
-            <small>预算</small>
-            <strong>¥{payload.total.toFixed(2)} / ¥{payload.budget}</strong>
+            <small>{userBudget ? "预算" : "预估合计"}</small>
+            <strong>
+              ¥{estimatedTotal.toFixed(2)}
+              {userBudget ? ` / ¥${userBudget.toFixed(2)}` : null}
+            </strong>
           </div>
           <div>
             <Clock3 size={15} strokeWidth={1.7} aria-hidden="true" />
@@ -57,16 +80,18 @@ export function PupuPurchaseCard({
           </div>
         </div>
 
-        <div
-          className="pupu-budget-track"
-          aria-label={`已使用预算 ${Math.round((payload.total / payload.budget) * 100)}%`}
-        >
-          <span
-            style={{
-              width: `${Math.min(100, (payload.total / payload.budget) * 100)}%`,
-            }}
-          />
-        </div>
+        {budgetPercent !== null && (
+          <div
+            className="pupu-budget-track"
+            role="progressbar"
+            aria-label="预算使用比例"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(budgetPercent)}
+          >
+            <span style={{ width: `${budgetPercent}%` }} />
+          </div>
+        )}
 
         <ul className="pupu-constraints" aria-label="已满足的约束">
           {payload.constraints.map((constraint) => (
@@ -86,7 +111,9 @@ export function PupuPurchaseCard({
       >
         <span>
           <PackageSearch size={17} strokeWidth={1.65} aria-hidden="true" />
-          {evidenceOpen ? "收起商品证据" : `查看商品证据（${payload.products.length} 件）`}
+          {evidenceOpen
+            ? "收起商品证据"
+            : `查看商品证据（${payload.products.length} 件）`}
         </span>
         <ChevronDown
           className={evidenceOpen ? "is-open" : undefined}
@@ -113,7 +140,7 @@ export function PupuPurchaseCard({
                 <motion.div
                   className="pupu-product"
                   key={product.productId}
-                  layoutId={`pupu-product-${product.productId}`}
+                  layoutId={`journey-${instanceId}-pupu-product-${product.productId}`}
                 >
                   <span className="pupu-product__index" aria-hidden="true">
                     {String(index + 1).padStart(2, "0")}

@@ -1,8 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import {
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-} from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import type { JourneyUIMessage } from "./journey-ui-message";
 import { useLiveJourney } from "./useLiveJourney";
@@ -15,46 +12,45 @@ function streamResponse(
     execute({ writer }) {
       writer.write({
         type: "data-journey",
-        data: { type: "stream.started", requestId },
+        data: { type: "stream.started", requestId, runId: "run-1" },
       });
       if (options.includePupu) {
         writer.write({
-          type: "data-pupu",
+          type: "data-journey",
           data: {
-            runId: "run-1",
-            capability: "pupu",
-            intent: "pupu.readonly_plan",
-            presentationMode: "canvas",
-            component: "pupu.purchase-plan",
-            state: "assembling",
-            dataSource: "live",
-            payload: {
-              stage: "cart_ready",
-              title: "实时方案",
-              summary: "实时数据",
-              meal: "按需采购",
-              people: 1,
-              budget: 12.9,
-              constraints: ["只读"],
-              decisionSummary: "来自朴朴实时读取",
-              products: [
-                {
-                  productId: "store-1",
-                  name: "鲜牛奶",
-                  specification: "950ml",
-                  unitPrice: 12.9,
-                  quantity: 1,
-                  currency: "CNY",
-                  stockStatus: "in_stock",
-                  collectedAt: "2026-08-10T00:00:00.000Z",
-                },
-              ],
-              total: 12.9,
-              currency: "CNY",
-              cartVersion: 0,
-              estimatedDelivery: "以实时页面为准",
+            type: "presentation.updated",
+            requestId,
+            presentation: {
+              capability: "pupu",
+              component: "pupu.purchase-plan",
+              mode: "canvas",
+              dataSource: "live",
+              payload: {
+                stage: "cart_ready",
+                title: "实时方案",
+                summary: "实时数据",
+                meal: "按需采购",
+                people: 1,
+                constraints: ["只读"],
+                decisionSummary: "来自朴朴实时读取",
+                products: [
+                  {
+                    productId: "store-1",
+                    name: "鲜牛奶",
+                    specification: "950ml",
+                    unitPrice: 12.9,
+                    quantity: 1,
+                    currency: "CNY",
+                    stockStatus: "in_stock",
+                    collectedAt: "2026-08-10T00:00:00.000Z",
+                  },
+                ],
+                estimatedTotal: 12.9,
+                currency: "CNY",
+                cartVersion: 0,
+                estimatedDelivery: "以实时页面为准",
+              },
             },
-            occurredAt: "2026-08-10T00:00:00.000Z",
           },
         });
       }
@@ -95,9 +91,7 @@ describe("useLiveJourney", () => {
           resolveFetch = resolve;
         }),
     );
-    const { result } = renderHook(() =>
-      useLiveJourney({ fetch: fetchMock }),
-    );
+    const { result } = renderHook(() => useLiveJourney({ fetch: fetchMock }));
 
     let submission: Promise<void>;
     act(() => {
@@ -116,37 +110,37 @@ describe("useLiveJourney", () => {
     await waitFor(() => expect(result.current.snapshot.state).toBe("ready"));
   });
 
-  it("stores only streamed live Pupu events and resets to idle", async () => {
+  it("stores streamed live Pupu presentations only in the Journey snapshot", async () => {
     const fetchMock = vi.fn(async (_url, init) => {
       const body = JSON.parse(String(init?.body));
       return streamResponse(body.requestId, { includePupu: true });
     });
-    const { result } = renderHook(() =>
-      useLiveJourney({ fetch: fetchMock }),
-    );
+    const { result } = renderHook(() => useLiveJourney({ fetch: fetchMock }));
 
     await act(async () => {
       await result.current.submit("买牛奶");
     });
 
     await waitFor(() =>
-      expect(result.current.pupuEvent?.dataSource).toBe("live"),
+      expect(result.current.snapshot.presentation?.dataSource).toBe("live"),
     );
-    expect(result.current.pupuEvent?.payload.products[0].name).toBe("鲜牛奶");
+    expect(result.current.snapshot.presentation).toMatchObject({
+      component: "pupu.purchase-plan",
+      payload: { products: [{ name: "鲜牛奶" }] },
+    });
+    expect("pupuEvent" in result.current).toBe(false);
 
     act(() => result.current.reset());
 
     expect(result.current.snapshot.state).toBe("idle");
-    expect(result.current.pupuEvent).toBeNull();
+    expect(result.current.snapshot.presentation).toBeNull();
   });
 
   it("turns transport failures into a typed journey error", async () => {
     const fetchMock = vi.fn(async () => {
       throw new Error("authorization secret");
     });
-    const { result } = renderHook(() =>
-      useLiveJourney({ fetch: fetchMock }),
-    );
+    const { result } = renderHook(() => useLiveJourney({ fetch: fetchMock }));
 
     await act(async () => {
       await result.current.submit("买牛奶");

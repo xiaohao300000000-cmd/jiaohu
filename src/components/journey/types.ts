@@ -1,4 +1,7 @@
-import type { PupuPurchasePayload } from "../agent/agent-ui-event";
+import type {
+  AgentDataSource,
+  PupuPurchasePayload,
+} from "../agent/agent-ui-event";
 import type { PresentationMode } from "../home/presentation";
 
 export type JourneyState =
@@ -56,7 +59,7 @@ export type JourneyPresentation =
       capability: "pupu";
       component: "pupu.purchase-plan";
       mode: PresentationMode;
-      dataSource: "live";
+      dataSource: AgentDataSource;
       payload: PupuJourneyPayload;
     }
   | {
@@ -84,11 +87,7 @@ export type AwaitingInput =
     };
 
 export type JourneyErrorKind =
-  | "offline"
-  | "timeout"
-  | "provider"
-  | "invalid_result"
-  | "unknown";
+  "offline" | "timeout" | "provider" | "invalid_result" | "unknown";
 
 export interface JourneyError {
   kind: JourneyErrorKind;

@@ -5,21 +5,13 @@ import { AgentHome } from "./components/home/AgentHome";
 import { FloatingComposer } from "./components/home/FloatingComposer";
 import type { TaskPresentation } from "./components/home/presentation";
 import { JourneyOriginSurface } from "./components/journey/JourneyOriginSurface";
-import { LiquidJourney } from "./components/journey/LiquidJourney";
-import { PupuPurchaseCard } from "./components/pupu/PupuPurchaseCard";
+import { JourneyPresentationRenderer } from "./components/journey/JourneyPresentationRenderer";
 import { JOURNEY_SPRINGS } from "./config/motion";
 
 export default function App() {
   const [activeTask, setActiveTask] = useState<TaskPresentation | null>(null);
-  const {
-    snapshot,
-    pupuEvent,
-    status,
-    submit,
-    stop,
-    retry,
-    reset,
-  } = useLiveJourney();
+  const { snapshot, transportBusy, submit, stop, retry, reset } =
+    useLiveJourney();
 
   const startTask = (input: string) => {
     const normalized = input.trim();
@@ -35,7 +27,6 @@ export default function App() {
   };
 
   const isCanvas = activeTask?.mode === "canvas";
-  const isRunning = status === "submitted" || status === "streaming";
 
   return (
     <div className="app-shell">
@@ -93,19 +84,15 @@ export default function App() {
                   requestText={activeTask.input}
                   state={snapshot.state}
                 >
-                  {pupuEvent ? (
-                    <PupuPurchaseCard event={pupuEvent} readOnly />
-                  ) : (
-                    <LiquidJourney
-                      snapshot={snapshot}
-                      onRetry={() => void retry()}
-                    />
-                  )}
+                  <JourneyPresentationRenderer
+                    snapshot={snapshot}
+                    onRetry={() => void retry()}
+                  />
                 </JourneyOriginSurface>
               </div>
               <FloatingComposer
                 onSubmit={startTask}
-                busy={isRunning}
+                busy={transportBusy}
                 onStop={() => void stop()}
               />
             </motion.section>
