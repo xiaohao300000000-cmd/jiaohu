@@ -85,7 +85,7 @@ export async function handlePupuLoginRequest(
     }
 
     const captcha = url.pathname.match(
-      /^\/api\/pupu\/login\/captcha\/([A-Za-z0-9-]{1,64})(\/result)?$/,
+      /^\/api\/pupu\/login\/captcha\/([A-Za-z0-9-]{1,64})(?:\/(result))?\/?$/,
     );
     if (captcha && (request.method === "GET" || request.method === "POST")) {
       if (request.method === "POST") {
@@ -98,7 +98,7 @@ export async function handlePupuLoginRequest(
         session.accountId,
         captcha[1],
         request.method,
-        captcha[2] || "",
+        captcha[2] === "result" ? "/result" : "",
         body,
         request.signal,
       );

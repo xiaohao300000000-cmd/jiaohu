@@ -27,6 +27,18 @@ describe("Pupu login CLI runner", () => {
     expect(() => buildLoginCommand({ ...scope, accountId: "../other" }, { kind: "status" })).toThrow("account");
   });
 
+  it("preserves the provider login session across captcha and SMS requests", () => {
+    const loginSessionId = "11111111-2222-4333-8444-555555555555";
+    const command = buildLoginCommand(scope, {
+      kind: "request", phone: "13000000000", loginSessionId,
+    });
+    expect(command.argv).toContain("--login-session-id");
+    expect(command.argv).toContain(loginSessionId);
+    expect(() => buildLoginCommand(scope, {
+      kind: "request", phone: "13000000000", loginSessionId: "../unsafe",
+    })).toThrow("session");
+  });
+
   it("redacts nested login secrets", () => {
     expect(redactProviderValue({
       phone: "secret",

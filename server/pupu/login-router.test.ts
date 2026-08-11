@@ -79,6 +79,36 @@ describe("Pupu login router", () => {
     expect(deps.controller.captchaBridge.forward).not.toHaveBeenCalled();
   });
 
+  it("forwards the controller-generated trailing-slash captcha URL", async () => {
+    const deps = await setup();
+    deps.controller.captchaBridge.forward.mockResolvedValue(
+      new Response("<html>slider</html>", {
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    const status = await handlePupuLoginRequest(
+      new Request("https://app.example/api/pupu/login/status"), deps,
+    );
+    const cookie = status.headers.get("set-cookie")!.split(";", 1)[0];
+    const response = await handlePupuLoginRequest(
+      new Request(
+        "https://app.example/api/pupu/login/captcha/attempt-1/",
+        { headers: { cookie } },
+      ),
+      deps,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("slider");
+    expect(deps.controller.captchaBridge.forward).toHaveBeenCalledWith(
+      expect.stringMatching(/^acct_/),
+      "attempt-1",
+      "GET",
+      "",
+      undefined,
+      expect.any(AbortSignal),
+    );
+  });
 
   it("rejects cross-origin mutations before the controller", async () => {
     const deps = await setup();

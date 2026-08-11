@@ -20,7 +20,7 @@ export interface PupuCliScope {
 
 export type LoginOperation =
   | { kind: "status" }
-  | { kind: "request"; phone: string }
-  | { kind: "applyCaptcha" }
-  | { kind: "verify"; code: string };
+  | { kind: "request"; phone: string; loginSessionId?: string }
+  | { kind: "applyCaptcha"; loginSessionId: string }
+  | { kind: "verify"; code: string; loginSessionId?: string };
 

@@ -23,6 +23,7 @@ interface Attempt {
   id: string;
   scope: PupuCliScope;
   phone: string;
+  providerSessionId?: string;
   expiresAt: number;
   resendAt: number;
   phase: "captcha" | "sms";
@@ -102,6 +103,9 @@ export class PupuLoginController {
       resendAt: now + this.options.resendCooldownMs,
       phase: "sms",
     };
+    const providerSessionId = object(result.data).login_session_id;
+    if (typeof providerSessionId === "string") attempt.providerSessionId = providerSessionId;
+
     if (providerCode(result) === "captcha_required") {
       attempt.phase = "captcha";
       const challenge = object(object(result.data).challenge);
@@ -139,7 +143,15 @@ export class PupuLoginController {
   ): Promise<PupuLoginState> {
     const attempt = this.current(sessionId);
     if (!attempt || attempt.phase !== "captcha") return { phase: "auth_required" };
-    const applied = await this.execute(attempt.scope, { kind: "applyCaptcha" }, signal);
+    if (!attempt.providerSessionId) {
+      return {
+        phase: "error",
+        error: { code: "invalid_captcha", message: "Pupu login session is missing.", retryable: true },
+      };
+    }
+    const applied = await this.execute(
+      attempt.scope, { kind: "applyCaptcha", loginSessionId: attempt.providerSessionId }, signal,
+    );
     if (applied.ok !== true && applied.status !== "captcha_applied") {
       return {
         phase: "captcha", attemptId: attempt.id,
@@ -147,7 +159,10 @@ export class PupuLoginController {
       };
     }
     const requested = await this.execute(
-      attempt.scope, { kind: "request", phone: attempt.phone }, signal,
+      attempt.scope, {
+        kind: "request", phone: attempt.phone,
+        loginSessionId: attempt.providerSessionId,
+      }, signal,
     );
     if (!isSmsRequested(requested)) {
       return {
@@ -180,7 +195,10 @@ export class PupuLoginController {
       };
     }
     const result = await this.execute(
-      attempt.scope, { kind: "request", phone: attempt.phone }, signal,
+      attempt.scope, {
+        kind: "request", phone: attempt.phone,
+        loginSessionId: attempt.providerSessionId,
+      }, signal,
     );
     if (!isSmsRequested(result)) {
       return {
@@ -203,7 +221,12 @@ export class PupuLoginController {
   ): Promise<PupuLoginState> {
     const attempt = this.current(sessionId);
     if (!attempt || attempt.phase !== "sms") return { phase: "auth_required" };
-    const result = await this.execute(attempt.scope, { kind: "verify", code }, signal);
+    const result = await this.execute(
+      attempt.scope,
+      { kind: "verify", code, ...(attempt.providerSessionId
+        ? { loginSessionId: attempt.providerSessionId } : {}) },
+      signal,
+    );
     if (result.ok !== true) {
       return {
         phase: "sms",

@@ -3,7 +3,9 @@ import { CaptchaBridge } from "./captcha-bridge";
 
 describe("CaptchaBridge", () => {
   it("binds a loopback challenge to one session and hides its origin", async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response("<html>ok</html>", {
+    const helperHtml =
+      "<script>fetch('/challenge/abcdefghijklmnopqrstuvwxyz123456/result')</script>";
+    const fetcher = vi.fn().mockResolvedValue(new Response(helperHtml, {
       status: 200, headers: { "content-type": "text/html" },
     }));
     const bridge = new CaptchaBridge({ fetch: fetcher, now: () => 1000 });
@@ -14,9 +16,18 @@ describe("CaptchaBridge", () => {
       "http://127.0.0.1:3210/challenge/abcdefghijklmnopqrstuvwxyz123456",
       expect.objectContaining({ method: "GET" }),
     );
-    expect(await response.text()).toBe("<html>ok</html>");
+    const responseHtml = await response.text();
+    expect(responseHtml).toContain("/api/pupu/login/captcha/attempt-a/result");
+    expect(responseHtml).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
     expect(response.headers.get("cache-control")).toContain("no-store");
-    expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'self'");
+    const policy = response.headers.get("content-security-policy") || "";
+    expect(policy).toContain("frame-ancestors 'self'");
+    expect(policy).toContain("https://gcaptcha4.geetest.com");
+    expect(policy).toContain("https://gcaptcha4.geevisit.com");
+    expect(policy).toContain("https://gcaptcha4.gsensebot.com");
+    expect(policy).toContain("img-src 'self' data: blob: https:");
+    expect(policy).toContain("style-src 'self' 'unsafe-inline' https:");
+    expect(policy).toContain("frame-src 'self' https:");
     expect(JSON.stringify(bridge.inspect("session-a", "attempt-a"))).not.toContain("3210");
   });
 

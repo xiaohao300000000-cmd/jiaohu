@@ -86,11 +86,37 @@ export class CaptchaBridge {
       "cache-control": "no-store, private",
       pragma: "no-cache",
       "content-security-policy":
-        "default-src 'self' https://static.geetest.com; script-src 'self' 'unsafe-inline' https://static.geetest.com; connect-src 'self' https:; frame-ancestors 'self'",
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' https://static.geetest.com " +
+          "https://gcaptcha4.geetest.com https://gcaptcha4.geevisit.com " +
+          "https://gcaptcha4.gsensebot.com; " +
+        "style-src 'self' 'unsafe-inline' https:; " +
+        "img-src 'self' data: blob: https:; " +
+        "font-src 'self' data: https:; connect-src 'self' https:; " +
+        "frame-src 'self' https:; worker-src 'self' blob:; frame-ancestors 'self'",
     });
     const contentType = upstream.headers.get("content-type");
     if (contentType) headers.set("content-type", contentType);
-    const responseBody = upstream.status === 204 ? null : await upstream.arrayBuffer();
+    let responseBody: BodyInit | null;
+    if (upstream.status === 204) {
+      responseBody = null;
+    } else if (
+      method === "GET" &&
+      contentType?.toLowerCase().includes("text/html")
+    ) {
+      const helperHtml = await upstream.text();
+      const helperResultPath =
+        `${new URL(binding.challengeUrl).pathname.replace(/\/$/, "")}/result`;
+      if (!helperHtml.includes(helperResultPath)) {
+        throw new Error("captcha helper callback route is missing");
+      }
+      responseBody = helperHtml.replaceAll(
+        helperResultPath,
+        `/api/pupu/login/captcha/${attemptId}/result`,
+      );
+    } else {
+      responseBody = await upstream.arrayBuffer();
+    }
     if (method === "POST" && upstream.ok) this.bindings.delete(attemptId);
     return new Response(responseBody, { status: upstream.status, headers });
   }

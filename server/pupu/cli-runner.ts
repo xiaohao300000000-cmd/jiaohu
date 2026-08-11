@@ -4,6 +4,7 @@ import type { LoginOperation, PupuCliScope } from "./login-types";
 
 const ACCOUNT = /^acct_[a-f0-9]{32}$/;
 const PHONE = /^1\d{10}$/;
+const LOGIN_SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SECRET_KEYS = new Set([
   "authorization", "captcha", "challenge", "code", "cookie", "phone",
   "refresh_token", "seal", "sign", "token",
@@ -45,6 +46,12 @@ export function buildLoginCommand(
       argv.push("verify-code", "--code-stdin", "--allow-session-rotation");
       stdin = `${operation.code}\n`;
       break;
+  }
+  if ("loginSessionId" in operation && operation.loginSessionId) {
+    if (!LOGIN_SESSION.test(operation.loginSessionId)) {
+      throw new Error("login session id is unsafe");
+    }
+    argv.push("--login-session-id", operation.loginSessionId);
   }
   argv.push(
     "--account-id", scope.accountId,

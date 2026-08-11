@@ -34,7 +34,10 @@ describe("PupuLoginController", () => {
       .mockResolvedValueOnce({
         ok: false, status: "captcha_required",
         error: { code: "captcha_required" },
-        data: { challenge: { challenge_url: "http://127.0.0.1:3210/challenge/abcdefghijklmnopqrstuvwxyz123456" } },
+        data: {
+          login_session_id: "11111111-2222-4333-8444-555555555555",
+          challenge: { challenge_url: "http://127.0.0.1:3210/challenge/abcdefghijklmnopqrstuvwxyz123456" },
+        },
       })
       .mockResolvedValueOnce({ ok: true, status: "captcha_applied" })
       .mockResolvedValueOnce({ ok: true, status: "sms_requested" });
@@ -46,8 +49,14 @@ describe("PupuLoginController", () => {
     expect(bridge.inspect("session-a", started.attemptId!)).toEqual({ registered: true });
     const result = await controller.completeCaptcha("session-a");
     expect(result.phase).toBe("sms");
-    expect(execute.mock.calls[1][1]).toEqual({ kind: "applyCaptcha" });
-    expect(execute.mock.calls[2][1]).toEqual({ kind: "request", phone: "13000000000" });
+    expect(execute.mock.calls[1][1]).toEqual({
+      kind: "applyCaptcha",
+      loginSessionId: "11111111-2222-4333-8444-555555555555",
+    });
+    expect(execute.mock.calls[2][1]).toEqual({
+      kind: "request", phone: "13000000000",
+      loginSessionId: "11111111-2222-4333-8444-555555555555",
+    });
   });
 
   it("sends OTP via stdin and requires a fresh ready status", async () => {
