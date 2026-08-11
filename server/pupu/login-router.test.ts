@@ -11,7 +11,7 @@ function setup() {
     const controller = {
       status: vi.fn().mockResolvedValue({ phase: "auth_required" }),
       start: vi.fn().mockResolvedValue({ phase: "sms", attemptId: "attempt-1" }),
-      completeCaptcha: vi.fn(),
+      completeCaptcha: vi.fn().mockResolvedValue({ phase: "sms", attemptId: "attempt-1" }),
       verify: vi.fn().mockResolvedValue({ phase: "connected" }),
       resend: vi.fn(),
       cancel: vi.fn().mockReturnValue({ phase: "auth_required" }),
@@ -61,6 +61,24 @@ describe("Pupu login router", () => {
       "13000000000", expect.any(AbortSignal),
     );
   });
+  it("routes captcha completion to the controller instead of the bridge", async () => {
+    const deps = await setup();
+    const response = await handlePupuLoginRequest(
+      new Request("https://app.example/api/pupu/login/captcha/complete", {
+        method: "POST",
+        headers: {
+          origin: "https://app.example",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+      deps,
+    );
+    expect(response.status).toBe(200);
+    expect(deps.controller.completeCaptcha).toHaveBeenCalledOnce();
+    expect(deps.controller.captchaBridge.forward).not.toHaveBeenCalled();
+  });
+
 
   it("rejects cross-origin mutations before the controller", async () => {
     const deps = await setup();
@@ -75,6 +93,32 @@ describe("Pupu login router", () => {
     expect(response.status).toBe(403);
     expect(deps.controller.start).not.toHaveBeenCalled();
 
+  });
+  it("cancels only the transient login attempt and keeps the account session", async () => {
+    const deps = await setup();
+    const status = await handlePupuLoginRequest(
+      new Request("https://app.example/api/pupu/login/status"), deps,
+    );
+    const cookie = status.headers.get("set-cookie")!.split(";", 1)[0];
+    const token = cookie.split("=", 2)[1];
+    const before = await deps.sessionStore.resolve(token);
+    const response = await handlePupuLoginRequest(
+      new Request("https://app.example/api/pupu/login/cancel", {
+        method: "POST",
+        headers: {
+          origin: "https://app.example",
+          "content-type": "application/json",
+          cookie,
+        },
+        body: "{}",
+      }),
+      deps,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ phase: "auth_required" });
+    expect(deps.controller.cancel).toHaveBeenCalledWith(before.accountId);
+    expect((await deps.sessionStore.resolve(token)).accountId).toBe(before.accountId);
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
   it("logs out only the cookie-bound account and clears the cookie", async () => {
     const deps = await setup();

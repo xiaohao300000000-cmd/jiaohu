@@ -18,6 +18,23 @@ describe("Pupu login client", () => {
       }),
     );
   });
+  it("cancels the transient attempt through the dedicated endpoint", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({ phase: "auth_required" }),
+    );
+    const client = createPupuLoginClient(fetcher);
+
+    await client.cancel();
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/pupu/login/cancel",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: "{}",
+      }),
+    );
+  });
 
   it("rejects an invalid response without reflecting submitted values", async () => {
     const client = createPupuLoginClient(

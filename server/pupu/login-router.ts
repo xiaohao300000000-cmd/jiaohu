@@ -70,9 +70,18 @@ export async function handlePupuLoginRequest(
     dataRoot: dependencies.config.dataRoot,
   };
 
+
   try {
     if (request.method === "GET" && url.pathname === "/api/pupu/login/status") {
       return json(await dependencies.controller.status(scope, request.signal), 200, extra);
+    }
+
+    if (
+      request.method === "POST" &&
+      url.pathname === "/api/pupu/login/captcha/complete"
+    ) {
+      assertMutationRequest(request, dependencies.config.publicOrigin);
+      return json(await dependencies.controller.completeCaptcha(session.accountId, request.signal), 200, extra);
     }
 
     const captcha = url.pathname.match(
@@ -107,9 +116,6 @@ export async function handlePupuLoginRequest(
         extra,
       );
     }
-    if (request.method === "POST" && url.pathname === "/api/pupu/login/captcha/complete") {
-      return json(await dependencies.controller.completeCaptcha(session.accountId, request.signal), 200, extra);
-    }
     if (request.method === "POST" && url.pathname === "/api/pupu/login/verify") {
       const body = await bodyObject(request);
       if (typeof body.code !== "string") return safeError(400, "invalid_code", "Enter the SMS code.");
@@ -117,6 +123,9 @@ export async function handlePupuLoginRequest(
     }
     if (request.method === "POST" && url.pathname === "/api/pupu/login/resend") {
       return json(await dependencies.controller.resend(session.accountId, request.signal), 200, extra);
+    }
+    if (request.method === "POST" && url.pathname === "/api/pupu/login/cancel") {
+      return json(dependencies.controller.cancel(session.accountId), 200, extra);
     }
     if (request.method === "DELETE" && url.pathname === "/api/pupu/login/session") {
       const state = dependencies.controller.cancel(session.accountId);

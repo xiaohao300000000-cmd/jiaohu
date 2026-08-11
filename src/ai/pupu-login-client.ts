@@ -50,6 +50,8 @@ export function createPupuLoginClient(fetcher: typeof fetch = fetch) {
       request(fetcher, "/api/pupu/login/verify", "POST", { code }),
     resend: () =>
       request(fetcher, "/api/pupu/login/resend", "POST"),
+    cancel: () =>
+      request(fetcher, "/api/pupu/login/cancel", "POST"),
   };
 }
 

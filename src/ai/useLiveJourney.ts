@@ -206,11 +206,14 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
       });
     }
   }, [loginClient, showLogin]);
-  const cancelLogin = useCallback(() => {
+  const cancelLogin = useCallback(async () => {
     heldTask.current = null;
+    try {
+      await loginClient.cancel();
+    } catch {}
     const requestId = activeRequestId.current;
     if (requestId) dispatch({ type: "stream.interrupted", requestId });
-  }, [dispatch]);
+  }, [dispatch, loginClient]);
 
 
   const stop = useCallback(async () => {
