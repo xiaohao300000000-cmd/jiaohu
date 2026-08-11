@@ -3,10 +3,12 @@ import type { JourneyEvent, JourneySnapshot } from "./types";
 export const initialJourneySnapshot: JourneySnapshot = {
   state: "idle",
   activeRequestId: null,
+  runId: null,
   requestText: "",
   trace: [],
   partialResult: null,
   result: null,
+  presentation: null,
   awaitingInput: null,
   error: null,
   replacementRequestId: null,
@@ -21,10 +23,12 @@ function startsRequest(
     ...snapshot,
     state: "receiving",
     activeRequestId: requestId,
+    runId: null,
     requestText: text,
     trace: [],
     partialResult: null,
     result: null,
+    presentation: null,
     awaitingInput: null,
     error: null,
     replacementRequestId: null,
@@ -49,7 +53,18 @@ export function journeyReducer(
 
   switch (event.type) {
     case "stream.started":
-      return { ...snapshot, state: "reasoning", error: null };
+      return {
+        ...snapshot,
+        state: "reasoning",
+        runId: event.runId,
+        error: null,
+      };
+    case "presentation.updated":
+      return {
+        ...snapshot,
+        state: "assembling",
+        presentation: event.presentation,
+      };
     case "trace.updated":
       return { ...snapshot, state: "reasoning", trace: event.entries };
     case "result.partial":
@@ -86,12 +101,14 @@ export function journeyReducer(
         state: "error",
         error: event.error,
         awaitingInput: null,
+        presentation: null,
       };
     case "stream.interrupted":
       return {
         ...snapshot,
         state: "interrupted",
         replacementRequestId: event.replacementRequestId ?? null,
+        presentation: null,
       };
   }
 }
