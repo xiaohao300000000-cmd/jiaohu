@@ -81,7 +81,11 @@ function liveResponse(requestId: string, includePupu = false): Response {
 }
 
 function installLiveFetch(includePupu = false) {
-  const fetchMock = vi.fn(async (_url, init) => {
+  const fetchMock = vi.fn(async (input, init) => {
+    const url = String(input);
+    if (url === "/api/pupu/login/status") {
+      return Response.json({ phase: "connected" });
+    }
     const body = JSON.parse(String(init?.body));
     return liveResponse(body.requestId, includePupu);
   });
