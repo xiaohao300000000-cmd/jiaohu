@@ -79,7 +79,8 @@ describe("handleChatRequest", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     expect(body).toContain('"type":"data-journey"');
-    expect(body).toContain('"type":"data-pupu"');
+    expect(body).not.toContain('"type":"data-pupu"');
+    expect(body).toContain('"type":"presentation.updated"');
     expect(body).toContain('"dataSource":"live"');
     expect(body).not.toMatch(/authorization|cookie|reasoning_content|secret/i);
     expect(createRun).toHaveBeenCalledWith(

@@ -2,17 +2,12 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
 } from "ai";
-import type {
-  AgentUIEvent,
-  PupuPurchasePayload,
-} from "../src/components/agent/agent-ui-event";
 import {
   createHermesEventContext,
   mapHermesEvent,
   type HermesRunEvent,
 } from "../src/ai/hermes-event-adapter";
 import type { JourneyUIMessage } from "../src/ai/journey-ui-message";
-import type { JourneyEvent } from "../src/components/journey/types";
 import { getHermesConfig } from "./config";
 import {
   createHermesRun,
@@ -67,12 +62,6 @@ function extractInput(body: unknown): string | null {
   return text || null;
 }
 
-function isPupuEvent(
-  event: JourneyEvent | AgentUIEvent<PupuPurchasePayload>,
-): event is AgentUIEvent<PupuPurchasePayload> {
-  return "capability" in event;
-}
-
 export async function handleChatRequest(
   request: Request,
   dependencies: ChatDependencies = {},
@@ -122,9 +111,7 @@ export async function handleChatRequest(
         { type: "run.started", run_id: runId },
         context,
       );
-      if (started && !isPupuEvent(started)) {
-        writer.write({ type: "data-journey", data: started });
-      }
+      if (started) writer.write({ type: "data-journey", data: started });
 
       for await (const sourceEvent of streamRun(runId, request.signal)) {
         let event = sourceEvent;
@@ -136,11 +123,7 @@ export async function handleChatRequest(
         }
         const mapped = mapHermesEvent(event, context);
         if (!mapped) continue;
-        if (isPupuEvent(mapped)) {
-          writer.write({ type: "data-pupu", data: mapped });
-        } else {
-          writer.write({ type: "data-journey", data: mapped });
-        }
+        writer.write({ type: "data-journey", data: mapped });
       }
     },
     onError: () => "实时服务暂时不可用，请稍后重试。",

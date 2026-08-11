@@ -13,7 +13,7 @@ describe("mapHermesEvent", () => {
 
     expect(
       mapHermesEvent({ type: "run.started", run_id: runId }, context),
-    ).toEqual({ type: "stream.started", requestId });
+    ).toEqual({ type: "stream.started", requestId, runId });
 
     expect(
       mapHermesEvent(
@@ -75,23 +75,27 @@ describe("mapHermesEvent", () => {
     );
 
     expect(pupu).toMatchObject({
-      runId,
-      capability: "pupu",
-      dataSource: "live",
-      state: "assembling",
-      payload: {
-        products: [
-          {
-            productId: "store-product-1",
-            name: "鲜牛奶",
-            specification: "950ml",
-            unitPrice: 12.9,
-            stockStatus: "in_stock",
-          },
-        ],
-        total: 12.9,
+      type: "presentation.updated",
+      requestId,
+      presentation: {
+        capability: "pupu",
+        component: "pupu.purchase-plan",
+        dataSource: "live",
+        payload: {
+          products: [
+            {
+              productId: "store-product-1",
+              name: "鲜牛奶",
+              specification: "950ml",
+              unitPrice: 12.9,
+              stockStatus: "in_stock",
+            },
+          ],
+          estimatedTotal: 12.9,
+        },
       },
     });
+    expect(JSON.stringify(pupu)).not.toMatch(/"budget"|"total":/);
 
     expect(
       mapHermesEvent(
