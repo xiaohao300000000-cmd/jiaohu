@@ -10,6 +10,13 @@ export async function installJourneyContractRoute(
   page: Page,
   outcome: ContractOutcome = "success",
 ): Promise<void> {
+  await page.route("**/api/pupu/login/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ phase: "connected" }),
+    });
+  });
   await page.route("**/api/chat", async (route) => {
     const body = route.request().postDataJSON() as { requestId?: string };
     const requestId = body.requestId || "contract-request";
