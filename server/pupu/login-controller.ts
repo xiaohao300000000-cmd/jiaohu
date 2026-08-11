@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { executeLoginCommand } from "./cli-runner";
+import { CaptchaBridge } from "./captcha-bridge";
 import type {
   LoginOperation, PupuCliScope, PupuLoginState,
 } from "./login-types";
@@ -15,6 +16,7 @@ interface Options {
   attemptTtlMs: number;
   resendCooldownMs: number;
   now?: () => number;
+  captchaBridge?: CaptchaBridge;
 }
 
 interface Attempt {
@@ -24,6 +26,7 @@ interface Attempt {
   expiresAt: number;
   resendAt: number;
   phase: "captcha" | "sms";
+  challengeUrl?: string;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -51,11 +54,13 @@ function isReady(result: Record<string, unknown>): boolean {
 export class PupuLoginController {
   private readonly execute: Execute;
   private readonly now: () => number;
+  readonly captchaBridge: CaptchaBridge;
   private readonly attempts = new Map<string, Attempt>();
 
   constructor(private readonly options: Options) {
     this.execute = options.execute || executeLoginCommand;
     this.now = options.now || Date.now;
+    this.captchaBridge = options.captchaBridge || new CaptchaBridge();
   }
 
   inspectAttempt(sessionId: string): Omit<Attempt, "phone" | "scope"> | null {
@@ -69,6 +74,7 @@ export class PupuLoginController {
     const attempt = this.attempts.get(sessionId);
     if (!attempt) return null;
     if (attempt.expiresAt <= this.now()) {
+      this.captchaBridge.remove(sessionId, attempt.id);
       this.attempts.delete(sessionId);
       return null;
     }
@@ -96,7 +102,20 @@ export class PupuLoginController {
       resendAt: now + this.options.resendCooldownMs,
       phase: "sms",
     };
-    if (providerCode(result) === "captcha_required") attempt.phase = "captcha";
+    if (providerCode(result) === "captcha_required") {
+      attempt.phase = "captcha";
+      const challenge = object(object(result.data).challenge);
+      if (typeof challenge.challenge_url !== "string") {
+        return {
+          phase: "error",
+          error: { code: "invalid_captcha", message: "Pupu captcha could not be started.", retryable: true },
+        };
+      }
+      attempt.challengeUrl = challenge.challenge_url;
+      this.captchaBridge.register(
+        sessionId, attempt.id, challenge.challenge_url, attempt.expiresAt,
+      );
+    }
     else if (!isSmsRequested(result)) {
       return {
         phase: "error",
@@ -111,6 +130,37 @@ export class PupuLoginController {
         ? { captchaUrl: `/api/pupu/login/captcha/${attempt.id}/` }
         : { retryAfterSeconds: Math.ceil(this.options.resendCooldownMs / 1000) }),
       expiresAt: new Date(attempt.expiresAt).toISOString(),
+    };
+  }
+
+  async completeCaptcha(
+    sessionId: string,
+    signal?: AbortSignal,
+  ): Promise<PupuLoginState> {
+    const attempt = this.current(sessionId);
+    if (!attempt || attempt.phase !== "captcha") return { phase: "auth_required" };
+    const applied = await this.execute(attempt.scope, { kind: "applyCaptcha" }, signal);
+    if (applied.ok !== true && applied.status !== "captcha_applied") {
+      return {
+        phase: "captcha", attemptId: attempt.id,
+        error: { code: "captcha_not_applied", message: "Captcha was not accepted.", retryable: true },
+      };
+    }
+    const requested = await this.execute(
+      attempt.scope, { kind: "request", phone: attempt.phone }, signal,
+    );
+    if (!isSmsRequested(requested)) {
+      return {
+        phase: "error",
+        error: { code: "sms_not_requested", message: "Pupu did not request an SMS.", retryable: true },
+      };
+    }
+    attempt.phase = "sms";
+    delete attempt.challengeUrl;
+    return {
+      phase: "sms", attemptId: attempt.id,
+      expiresAt: new Date(attempt.expiresAt).toISOString(),
+      retryAfterSeconds: Math.ceil(Math.max(0, attempt.resendAt - this.now()) / 1000),
     };
   }
 
@@ -141,6 +191,8 @@ export class PupuLoginController {
   }
 
   cancel(sessionId: string): PupuLoginState {
+    const attempt = this.attempts.get(sessionId);
+    if (attempt) this.captchaBridge.remove(sessionId, attempt.id);
     this.attempts.delete(sessionId);
     return { phase: "auth_required" };
   }

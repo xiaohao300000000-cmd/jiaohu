@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PupuLoginController } from "./login-controller";
+import { CaptchaBridge } from "./captcha-bridge";
 
 const scope = {
   cliPath: "/opt/pupu",
@@ -14,7 +15,7 @@ describe("PupuLoginController", () => {
       ok: false,
       status: "failed",
       error: { code: "captcha_required" },
-      data: { challenge_url: "http://127.0.0.1:3210/challenge/token" },
+      data: { challenge: { challenge_url: "http://127.0.0.1:3210/challenge/abcdefghijklmnopqrstuvwxyz123456" } },
     });
     const controller = new PupuLoginController({ execute, attemptTtlMs: 60_000, resendCooldownMs: 30_000 });
     const result = await controller.start("session-a", scope, "13000000000");
@@ -23,6 +24,30 @@ describe("PupuLoginController", () => {
     expect(result).toHaveProperty("attemptId");
     expect(JSON.stringify(result)).not.toContain("13000000000");
     expect(controller.inspectAttempt("session-a")).not.toHaveProperty("phone");
+    controller.cancel("session-a");
+    expect(controller.captchaBridge.inspect("session-a", result.attemptId!)).toBeNull();
+
+  });
+
+  it("applies a completed captcha and repeats the real SMS request", async () => {
+    const execute = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false, status: "captcha_required",
+        error: { code: "captcha_required" },
+        data: { challenge: { challenge_url: "http://127.0.0.1:3210/challenge/abcdefghijklmnopqrstuvwxyz123456" } },
+      })
+      .mockResolvedValueOnce({ ok: true, status: "captcha_applied" })
+      .mockResolvedValueOnce({ ok: true, status: "sms_requested" });
+    const bridge = new CaptchaBridge({ fetch: vi.fn() });
+    const controller = new PupuLoginController({
+      execute, captchaBridge: bridge, attemptTtlMs: 60_000, resendCooldownMs: 30_000,
+    });
+    const started = await controller.start("session-a", scope, "13000000000");
+    expect(bridge.inspect("session-a", started.attemptId!)).toEqual({ registered: true });
+    const result = await controller.completeCaptcha("session-a");
+    expect(result.phase).toBe("sms");
+    expect(execute.mock.calls[1][1]).toEqual({ kind: "applyCaptcha" });
+    expect(execute.mock.calls[2][1]).toEqual({ kind: "request", phone: "13000000000" });
   });
 
   it("sends OTP via stdin and requires a fresh ready status", async () => {

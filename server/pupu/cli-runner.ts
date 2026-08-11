@@ -94,7 +94,7 @@ export async function executeLoginCommand(
       try {
         const parsed = JSON.parse(output) as Record<string, unknown>;
         if (code !== 0 && !output) return reject(new Error("provider process failed"));
-        resolve(redactProviderValue(parsed) as Record<string, unknown>);
+        resolve(parsed);
       } catch {
         reject(new Error("provider returned invalid JSON"));
       }
