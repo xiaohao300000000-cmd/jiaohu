@@ -38,6 +38,9 @@ SAFE_RESULT_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SAFE_IDENTITY_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 
 
+class ProviderConfigurationError(ValueError):
+    pass
+
 class CompletedProcess(Protocol):
     stdout: str
     stderr: str
@@ -52,6 +55,21 @@ class ProcessRunner(Protocol):
         timeout: int,
         max_output_bytes: int,
     ) -> CompletedProcess: ...
+
+
+def provider_timeout_seconds(env: dict[str, str] | os._Environ[str] = os.environ) -> int:
+    raw = env.get("PUPU_TOOL_TIMEOUT_SECONDS", "75")
+    try:
+        timeout = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ProviderConfigurationError(
+            "PUPU_TOOL_TIMEOUT_SECONDS must be an integer from 10 to 180"
+        ) from exc
+    if not 10 <= timeout <= 180:
+        raise ProviderConfigurationError(
+            "PUPU_TOOL_TIMEOUT_SECONDS must be an integer from 10 to 180"
+        )
+    return timeout
 
 
 def error_json(code: str, message: str, *, retryable: bool = False) -> str:
@@ -274,7 +292,11 @@ def run_pupu(
         )
     try:
         argv = build_argv(operation, arguments)
-        completed = runner(argv, timeout=30, max_output_bytes=MAX_OUTPUT_BYTES)
+        completed = runner(
+            argv, timeout=provider_timeout_seconds(), max_output_bytes=MAX_OUTPUT_BYTES
+        )
+    except ProviderConfigurationError as exc:
+        return error_json("invalid_configuration", str(exc))
     except ValueError as exc:
         return error_json("invalid_arguments", str(exc))
     except subprocess.TimeoutExpired:

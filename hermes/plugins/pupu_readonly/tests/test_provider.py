@@ -1,5 +1,6 @@
 import json
 import subprocess
+from types import SimpleNamespace
 import pytest
 
 from hermes.plugins.pupu_readonly.provider import (
@@ -98,6 +99,50 @@ def test_maps_timeout_to_typed_error():
     assert result["ok"] is False
     assert result["error"]["code"] == "provider_timeout"
     assert result["error"]["retryable"] is True
+
+
+def successful_capabilities():
+    return SimpleNamespace(
+        returncode=0,
+        stderr="",
+        stdout=json.dumps(
+            {
+                "schema_version": "1",
+                "ok": True,
+                "operation": "pupu.capabilities",
+                "request_id": "req-timeout",
+                "household_id": None,
+                "status": "succeeded",
+                "data": {"operations": []},
+                "error": None,
+                "next_actions": [],
+                "evidence_ref": None,
+            }
+        ),
+    )
+
+
+def test_uses_default_provider_timeout(monkeypatch):
+    monkeypatch.delenv("PUPU_TOOL_TIMEOUT_SECONDS", raising=False)
+    runner = RecordingRunner(completed=successful_capabilities())
+    run_pupu("capabilities", {}, runner=runner)
+    assert runner.calls[0]["timeout"] == 75
+
+
+def test_uses_configured_provider_timeout(monkeypatch):
+    monkeypatch.setenv("PUPU_TOOL_TIMEOUT_SECONDS", "120")
+    runner = RecordingRunner(completed=successful_capabilities())
+    run_pupu("capabilities", {}, runner=runner)
+    assert runner.calls[0]["timeout"] == 120
+
+
+@pytest.mark.parametrize("value", ["9", "181", "abc", "10.5"])
+def test_rejects_invalid_provider_timeout(monkeypatch, value):
+    monkeypatch.setenv("PUPU_TOOL_TIMEOUT_SECONDS", value)
+    runner = RecordingRunner()
+    result = json.loads(run_pupu("capabilities", {}, runner=runner))
+    assert result["error"]["code"] == "invalid_configuration"
+    assert runner.calls == []
 
 
 def test_rejects_non_json_and_oversized_output():

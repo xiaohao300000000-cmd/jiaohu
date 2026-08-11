@@ -30,6 +30,7 @@ ensure_env_entry "PUPU_CLI_PATH" "/home/pupu/providers/pupu-cli/.venv/bin/pupu"
 ensure_env_entry "PUPU_DATA_DIR" "/home/pupu/providers/pupu-cli/.local/private"
 ensure_env_entry "PUPU_HOUSEHOLD_ID" "household-f3f3b74a55ae8bf60b6c1172"
 ensure_env_entry "PUPU_RESULT_DIR" "/home/pupu/.hermes/run-artifacts"
+ensure_env_entry "PUPU_TOOL_TIMEOUT_SECONDS" "75"
 
 printf 'Installed pupu-readonly plugin and loopback Hermes configuration.\n'
 printf 'DEEPSEEK_API_KEY remains unset until the dedicated test key is supplied.\n'
