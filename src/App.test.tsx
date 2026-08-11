@@ -127,7 +127,7 @@ describe("live Agent home", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "朴朴帮我买" }));
+    await user.click(screen.getByRole("button", { name: "朴朴搜索商品" }));
 
     expect(
       await screen.findByRole("heading", { name: "按需采购 · 1 人" }),

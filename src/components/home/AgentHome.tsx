@@ -1,4 +1,4 @@
-import { ArrowUp, ShoppingBasket, Utensils } from "lucide-react";
+import { ArrowUp, PackageSearch, Search, ShoppingBasket } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { useState, type FormEvent } from "react";
 import { JOURNEY_SPRINGS } from "../../config/motion";
@@ -13,9 +13,9 @@ interface AgentHomeProps {
 }
 
 const examples = [
-  { label: "朴朴帮我买", icon: ShoppingBasket },
-  { label: "今晚吃什么", icon: Utensils },
-  { label: "确认退款", icon: ShoppingBasket },
+  { label: "朴朴搜索商品", icon: Search },
+  { label: "查看朴朴商品详情", icon: PackageSearch },
+  { label: "查看朴朴购物车", icon: ShoppingBasket },
 ];
 
 export function AgentHome({
@@ -36,14 +36,24 @@ export function AgentHome({
 
   return (
     <MotionConfig reducedMotion="user">
-      <section className={`agent-home${anchoredTask ? " agent-home--answered" : ""}`}>
-        <motion.div className="agent-home__intro" layout transition={JOURNEY_SPRINGS.quickSnappy}>
+      <section
+        className={`agent-home${anchoredTask ? " agent-home--answered" : ""}`}
+      >
+        <motion.div
+          className="agent-home__intro"
+          layout
+          transition={JOURNEY_SPRINGS.quickSnappy}
+        >
           <p className="agent-home__kicker">随时可以开始</p>
           <h1>今天想让我做什么？</h1>
-          <p>吃什么、买什么、查快递或看看外卖进度，都可以直接说。</p>
+          <p>直接告诉我你的需求。</p>
         </motion.div>
 
-        <motion.div className="agent-home__conversation" layout transition={JOURNEY_SPRINGS.quickSnappy}>
+        <motion.div
+          className="agent-home__conversation"
+          layout
+          transition={JOURNEY_SPRINGS.quickSnappy}
+        >
           <motion.form
             className="home-composer"
             data-testid="home-composer"
@@ -52,7 +62,9 @@ export function AgentHome({
             transition={JOURNEY_SPRINGS.groundedSettle}
             onSubmit={submit}
           >
-            <label className="sr-only" htmlFor="home-instruction">输入生活指令</label>
+            <label className="sr-only" htmlFor="home-instruction">
+              输入生活指令
+            </label>
             <motion.input
               id="home-instruction"
               data-layout-id="journey-request-text"
@@ -79,7 +91,9 @@ export function AgentHome({
                 exit={{ opacity: 0, y: -6, scale: 0.985 }}
                 transition={JOURNEY_SPRINGS.quickSnappy}
               >
-                <p className="anchored-result__request">“{anchoredTask.input}”</p>
+                <p className="anchored-result__request">
+                  “{anchoredTask.input}”
+                </p>
                 <QuickResultCard kind={anchoredTask.kind} />
               </motion.div>
             )}
@@ -97,7 +111,11 @@ export function AgentHome({
               <span>试着这样说</span>
               <div>
                 {examples.map(({ label, icon: Icon }) => (
-                  <button key={label} type="button" onClick={() => onExampleSelect(label)}>
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => onExampleSelect(label)}
+                  >
                     <Icon size={16} strokeWidth={1.7} aria-hidden="true" />
                     {label}
                   </button>
