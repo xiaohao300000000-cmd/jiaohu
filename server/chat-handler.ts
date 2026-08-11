@@ -104,44 +104,49 @@ export async function handleChatRequest(
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {
-      const { runId } = await createRun(input, sessionId, request.signal);
-      writer.write({ type: "message-metadata", messageMetadata: { runId } });
-      const context = createHermesEventContext(sessionId, input, runId);
-      const started = mapHermesEvent(
-        { type: "run.started", run_id: runId },
-        context,
-      );
-      if (started) writer.write({ type: "data-journey", data: started });
+      try {
+        const { runId } = await createRun(input, sessionId, request.signal);
+        writer.write({ type: "message-metadata", messageMetadata: { runId } });
+        const context = createHermesEventContext(sessionId, input, runId);
+        const started = mapHermesEvent(
+          { type: "run.started", run_id: runId },
+          context,
+        );
+        if (started) writer.write({ type: "data-journey", data: started });
 
-      let toolSequence = 0;
-      for await (const sourceEvent of streamRun(runId, request.signal)) {
-        let event = sourceEvent;
-        if (
-          sourceEvent.type === "tool.completed" &&
-          sourceEvent.tool_name.startsWith("pupu_")
-        ) {
-          toolSequence += 1;
-          const artifact = await artifactReader({
-            sessionId,
-            runId,
-            toolCallId: sourceEvent.tool_call_id,
-            toolName: sourceEvent.tool_name,
-            sequence: toolSequence,
-          });
-          event = {
-            ...sourceEvent,
-            output:
-              artifact.status === "ok"
-                ? artifact.result
-                : {
-                    kind: "invalid_result",
-                    artifactStatus: artifact.status,
-                  },
-          };
+        let toolSequence = 0;
+        for await (const sourceEvent of streamRun(runId, request.signal)) {
+          let event = sourceEvent;
+          if (
+            sourceEvent.type === "tool.completed" &&
+            sourceEvent.tool_name.startsWith("pupu_")
+          ) {
+            toolSequence += 1;
+            const artifact = await artifactReader({
+              sessionId,
+              runId,
+              toolCallId: sourceEvent.tool_call_id,
+              toolName: sourceEvent.tool_name,
+              sequence: toolSequence,
+            });
+            event = {
+              ...sourceEvent,
+              output:
+                artifact.status === "ok"
+                  ? artifact.result
+                  : {
+                      kind: "invalid_result",
+                      artifactStatus: artifact.status,
+                    },
+            };
+          }
+          const mapped = mapHermesEvent(event, context);
+          if (!mapped) continue;
+          writer.write({ type: "data-journey", data: mapped });
         }
-        const mapped = mapHermesEvent(event, context);
-        if (!mapped) continue;
-        writer.write({ type: "data-journey", data: mapped });
+      } catch (error) {
+        if (request.signal.aborted) return;
+        throw error;
       }
     },
     onError: () => "实时服务暂时不可用，请稍后重试。",

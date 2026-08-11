@@ -145,7 +145,7 @@ export async function* parseHermesEventStream(
   const activeCalls = new Map<string, string>();
   let buffer = "";
   const abort = () => {
-    void reader.cancel("aborted");
+    void reader.cancel("aborted").catch(() => undefined);
   };
   signal?.addEventListener("abort", abort, { once: true });
 

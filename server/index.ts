@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import { handleChatRequest } from "./chat-handler";
 import { getHermesConfig } from "./config";
 import { stopHermesRun } from "./hermes-client";
+import { abortOnClientDisconnect } from "./request-lifecycle";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
@@ -50,7 +51,7 @@ app.post(
   express.raw({ type: "application/json", limit: "1mb" }),
   async (req, res) => {
     const controller = new AbortController();
-    req.once("close", () => controller.abort());
+    const stopWatching = abortOnClientDisconnect(req, res, controller);
     const request = new Request(
       `http://${req.headers.host || "localhost"}${req.originalUrl}`,
       {
@@ -73,6 +74,8 @@ app.post(
       } else {
         res.end();
       }
+    } finally {
+      stopWatching();
     }
   },
 );

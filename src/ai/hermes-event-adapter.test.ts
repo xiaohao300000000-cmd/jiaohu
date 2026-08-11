@@ -249,5 +249,16 @@ describe("mapHermesEvent", () => {
       },
     });
     expect(JSON.stringify(mapped)).not.toContain('"dataSource":"live"');
+
+    expect(
+      mapHermesEvent(
+        {
+          type: "run.completed",
+          run_id: runId,
+          output: { summary: "provider failure must not become ready" },
+        },
+        context,
+      ),
+    ).toBeNull();
   });
 });
