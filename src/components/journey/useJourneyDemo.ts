@@ -115,7 +115,11 @@ export function useJourneyDemo({
 
   const scheduleStandardBody = useCallback(
     (requestId: string) => {
-      schedule(500, { type: "stream.started", requestId });
+      schedule(500, {
+        type: "stream.started",
+        requestId,
+        runId: `demo-${requestId}`,
+      });
       schedule(1_050, {
         type: "trace.updated",
         requestId,
@@ -163,7 +167,11 @@ export function useJourneyDemo({
     pendingReplacement.current = null;
     const requestId = nextRequestId();
     dispatch({ type: "request.sent", requestId, text: defaultRequest });
-    schedule(500, { type: "stream.started", requestId });
+    schedule(500, {
+      type: "stream.started",
+      requestId,
+      runId: `demo-${requestId}`,
+    });
     schedule(1_050, {
       type: "trace.updated",
       requestId,
@@ -192,7 +200,11 @@ export function useJourneyDemo({
       requestId,
       text: text.trim() || defaultRequest,
     });
-    schedule(450, { type: "stream.started", requestId });
+    schedule(450, {
+      type: "stream.started",
+      requestId,
+      runId: `demo-${requestId}`,
+    });
     schedule(950, {
       type: "trace.updated",
       requestId,

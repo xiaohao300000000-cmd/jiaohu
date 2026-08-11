@@ -1,9 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-} from "ai";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JourneyUIMessage } from "./ai/journey-ui-message";
 import App from "./App";
@@ -13,46 +10,45 @@ function liveResponse(requestId: string, includePupu = false): Response {
     execute({ writer }) {
       writer.write({
         type: "data-journey",
-        data: { type: "stream.started", requestId },
+        data: { type: "stream.started", requestId, runId: "run-live-1" },
       });
       if (includePupu) {
         writer.write({
-          type: "data-pupu",
+          type: "data-journey",
           data: {
-            runId: "run-live-1",
-            capability: "pupu",
-            intent: "pupu.readonly_plan",
-            presentationMode: "canvas",
-            component: "pupu.purchase-plan",
-            state: "assembling",
-            dataSource: "live",
-            payload: {
-              stage: "cart_ready",
-              title: "朴朴实时商品方案",
-              summary: "本次实时查询结果",
-              meal: "按需采购",
-              people: 1,
-              budget: 12.9,
-              constraints: ["仅使用实时数据", "首版只读"],
-              decisionSummary: "商品、价格与库存来自朴朴 CLI 实时读取。",
-              products: [
-                {
-                  productId: "store-1",
-                  name: "鲜牛奶",
-                  specification: "950ml",
-                  unitPrice: 12.9,
-                  quantity: 1,
-                  currency: "CNY",
-                  stockStatus: "in_stock",
-                  collectedAt: "2026-08-10T00:00:00.000Z",
-                },
-              ],
-              total: 12.9,
-              currency: "CNY",
-              cartVersion: 0,
-              estimatedDelivery: "以朴朴实时页面为准",
+            type: "presentation.updated",
+            requestId,
+            presentation: {
+              capability: "pupu",
+              component: "pupu.purchase-plan",
+              mode: "canvas",
+              dataSource: "live",
+              payload: {
+                stage: "cart_ready",
+                title: "朴朴实时商品方案",
+                summary: "本次实时查询结果",
+                meal: "按需采购",
+                people: 1,
+                constraints: ["仅使用实时数据", "首版只读"],
+                decisionSummary: "商品、价格与库存来自朴朴 CLI 实时读取。",
+                products: [
+                  {
+                    productId: "store-1",
+                    name: "鲜牛奶",
+                    specification: "950ml",
+                    unitPrice: 12.9,
+                    quantity: 1,
+                    currency: "CNY",
+                    stockStatus: "in_stock",
+                    collectedAt: "2026-08-10T00:00:00.000Z",
+                  },
+                ],
+                estimatedTotal: 12.9,
+                currency: "CNY",
+                cartVersion: 0,
+                estimatedDelivery: "以朴朴实时页面为准",
+              },
             },
-            occurredAt: "2026-08-10T00:00:00.000Z",
           },
         });
       }
@@ -131,12 +127,13 @@ describe("live Agent home", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "朴朴帮我买" }));
+    await user.click(screen.getByRole("button", { name: "朴朴搜索商品" }));
 
     expect(
       await screen.findByRole("heading", { name: "按需采购 · 1 人" }),
     ).toBeVisible();
-    expect(screen.getByText("¥12.90 / ¥12.9")).toBeVisible();
+    expect(screen.getByText("¥12.90")).toBeVisible();
+    expect(screen.queryByText(/预算/)).toBeNull();
     expect(screen.queryByRole("button", { name: "加入购物车" })).toBeNull();
     expect(screen.queryByText("示例数据")).toBeNull();
   });

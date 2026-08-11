@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
 import subprocess
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
@@ -33,6 +35,7 @@ SENSITIVE_KEYS = {
     "token",
 }
 SAFE_RESULT_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+SAFE_IDENTITY_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 
 
 class CompletedProcess(Protocol):
@@ -180,11 +183,17 @@ def persist_run_result(
     *,
     task_id: str,
     tool_name: str,
+    run_id: str | None = None,
+    tool_call_id: str | None = None,
 ) -> Path:
     if not SAFE_RESULT_KEY.fullmatch(task_id):
         raise ValueError("unsafe task_id")
     if not SAFE_RESULT_KEY.fullmatch(tool_name):
         raise ValueError("unsafe tool_name")
+    if run_id is not None and not SAFE_IDENTITY_KEY.fullmatch(run_id):
+        raise ValueError("unsafe run_id")
+    if tool_call_id is not None and not SAFE_IDENTITY_KEY.fullmatch(tool_call_id):
+        raise ValueError("unsafe tool_call_id")
 
     root = Path(
         os.environ.get("PUPU_RESULT_DIR", "/home/pupu/.hermes/run-artifacts")
@@ -193,22 +202,63 @@ def persist_run_result(
     root.chmod(0o700)
 
     validated = json.loads(parse_cli_output(result_json))
-    payload = {
-        "task_id": task_id,
-        "tool_name": tool_name,
-        "result": validated,
-    }
-    destination = root / f"{task_id}.json"
-    temporary = root / f".{task_id}.{os.getpid()}.tmp"
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    lock_path = root / f".{task_id}.lock"
+    lock_descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False)
-        os.replace(temporary, destination)
-        destination.chmod(0o600)
+        fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
+        sequence_path = root / f".{task_id}.sequence"
+        try:
+            previous_sequence = int(sequence_path.read_text(encoding="utf-8").strip())
+        except (FileNotFoundError, ValueError):
+            previous_sequence = 0
+        sequence = previous_sequence + 1
+        sequence_temporary = root / f".{task_id}.sequence.{uuid4().hex}.tmp"
+        sequence_descriptor = os.open(
+            sequence_temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        try:
+            with os.fdopen(sequence_descriptor, "w", encoding="utf-8") as handle:
+                handle.write(str(sequence))
+            os.replace(sequence_temporary, sequence_path)
+            sequence_path.chmod(0o600)
+        finally:
+            if sequence_temporary.exists():
+                sequence_temporary.unlink()
+
+        artifact_id = uuid4().hex
+        payload = {
+            "artifact_id": artifact_id,
+            "task_id": task_id,
+            "tool_name": tool_name,
+            "sequence": sequence,
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "result": validated,
+        }
+        if run_id is not None:
+            payload["run_id"] = run_id
+        if tool_call_id is not None:
+            payload["tool_call_id"] = tool_call_id
+
+        destination = root / f"{task_id}.{sequence:06d}.{artifact_id}.json"
+        temporary = root / f".{task_id}.{artifact_id}.{os.getpid()}.tmp"
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False)
+            os.replace(temporary, destination)
+            destination.chmod(0o600)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
     finally:
-        if temporary.exists():
-            temporary.unlink()
+        fcntl.flock(lock_descriptor, fcntl.LOCK_UN)
+        os.close(lock_descriptor)
     return destination
 
 

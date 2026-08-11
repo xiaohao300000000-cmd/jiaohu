@@ -1,3 +1,9 @@
+import type {
+  AgentDataSource,
+  PupuPurchasePayload,
+} from "../agent/agent-ui-event";
+import type { PresentationMode } from "../home/presentation";
+
 export type JourneyState =
   | "idle"
   | "receiving"
@@ -40,6 +46,30 @@ export interface JourneyResult {
   items: JourneyResultItem[];
 }
 
+export type PupuJourneyPayload = Omit<
+  PupuPurchasePayload,
+  "budget" | "total"
+> & {
+  estimatedTotal: number;
+  userBudget?: number;
+};
+
+export type JourneyPresentation =
+  | {
+      capability: "pupu";
+      component: "pupu.purchase-plan";
+      mode: PresentationMode;
+      dataSource: AgentDataSource;
+      payload: PupuJourneyPayload;
+    }
+  | {
+      capability: "generic";
+      component: "journey.result";
+      mode: PresentationMode;
+      dataSource: "live";
+      payload: JourneyResult;
+    };
+
 export type AwaitingInput =
   | {
       kind: "approval";
@@ -57,11 +87,7 @@ export type AwaitingInput =
     };
 
 export type JourneyErrorKind =
-  | "offline"
-  | "timeout"
-  | "provider"
-  | "invalid_result"
-  | "unknown";
+  "offline" | "timeout" | "provider" | "invalid_result" | "unknown";
 
 export interface JourneyError {
   kind: JourneyErrorKind;
@@ -71,7 +97,12 @@ export interface JourneyError {
 
 export type JourneyEvent =
   | { type: "request.sent"; requestId: string; text: string }
-  | { type: "stream.started"; requestId: string }
+  | { type: "stream.started"; requestId: string; runId: string }
+  | {
+      type: "presentation.updated";
+      requestId: string;
+      presentation: JourneyPresentation;
+    }
   | { type: "trace.updated"; requestId: string; entries: TraceEntry[] }
   | {
       type: "result.partial";
@@ -109,10 +140,12 @@ export interface JourneySnapshot {
   state: JourneyState;
   activeRequestId: string | null;
   requestText: string;
+  runId: string | null;
   trace: TraceEntry[];
   partialResult: PartialJourneyResult | null;
   result: JourneyResult | null;
   awaitingInput: AwaitingInput | null;
+  presentation: JourneyPresentation | null;
   error: JourneyError | null;
   replacementRequestId: string | null;
 }

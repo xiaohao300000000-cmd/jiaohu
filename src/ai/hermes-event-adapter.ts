@@ -1,9 +1,5 @@
 import { z } from "zod";
-import type {
-  AgentUIEvent,
-  PupuPurchasePayload,
-  ProductSummary,
-} from "../components/agent/agent-ui-event";
+import type { ProductSummary } from "../components/agent/agent-ui-event";
 import type {
   JourneyEvent,
   JourneyResult,
@@ -75,12 +71,10 @@ export interface HermesEventContext {
   runId: string;
   trace: TraceEntry[];
   products: ProductSummary[];
+  terminalFailure: boolean;
 }
 
-const toolPresentation: Record<
-  string,
-  { label: string; detail: string }
-> = {
+const toolPresentation: Record<string, { label: string; detail: string }> = {
   pupu_capabilities: {
     label: "检查朴朴能力",
     detail: "正在确认只读能力边界",
@@ -108,7 +102,14 @@ export function createHermesEventContext(
   requestText: string,
   runId: string,
 ): HermesEventContext {
-  return { requestId, requestText, runId, trace: [], products: [] };
+  return {
+    requestId,
+    requestText,
+    runId,
+    trace: [],
+    products: [],
+    terminalFailure: false,
+  };
 }
 
 function extractItems(data: unknown): unknown[] | null {
@@ -175,7 +176,6 @@ function safeReference(error: unknown): string | undefined {
   return undefined;
 }
 
-
 function safeErrorKind(error: unknown): "provider" | "invalid_result" {
   if (
     error !== null &&
@@ -187,10 +187,11 @@ function safeErrorKind(error: unknown): "provider" | "invalid_result" {
   }
   return "provider";
 }
-function invalidResult(requestId: string): JourneyEvent {
+function invalidResult(context: HermesEventContext): JourneyEvent {
+  context.terminalFailure = true;
   return {
     type: "stream.failed",
-    requestId,
+    requestId: context.requestId,
     error: {
       kind: "invalid_result",
       message: "实时商品数据格式不正确。",
@@ -201,20 +202,21 @@ function invalidResult(requestId: string): JourneyEvent {
 function mapPupuOutput(
   event: Extract<HermesRunEvent, { type: "tool.completed" }>,
   context: HermesEventContext,
-): JourneyEvent | AgentUIEvent<PupuPurchasePayload> {
+): JourneyEvent {
   let rawOutput = event.output;
   if (typeof rawOutput === "string") {
     try {
       rawOutput = JSON.parse(rawOutput);
     } catch {
-      return invalidResult(context.requestId);
+      return invalidResult(context);
     }
   }
 
   const envelope = cliEnvelopeSchema.safeParse(rawOutput);
-  if (!envelope.success) return invalidResult(context.requestId);
+  if (!envelope.success) return invalidResult(context);
   const authRequired = envelope.data.status === "auth_required";
   if (authRequired || !envelope.data.ok) {
+    context.terminalFailure = true;
     return {
       type: "stream.failed",
       requestId: context.requestId,
@@ -241,9 +243,9 @@ function mapPupuOutput(
   }
 
   const items = extractItems(envelope.data.data);
-  if (items === null) return invalidResult(context.requestId);
+  if (items === null) return invalidResult(context);
   const parsedProducts = z.array(normalizedSkuSchema).safeParse(items);
-  if (!parsedProducts.success) return invalidResult(context.requestId);
+  if (!parsedProducts.success) return invalidResult(context);
 
   const products = parsedProducts.data.map(toProduct);
   context.products = products;
@@ -251,48 +253,53 @@ function mapPupuOutput(
     (sum, product) => sum + product.unitPrice * product.quantity,
     0,
   );
-  const occurredAt = new Date().toISOString();
   return {
-    runId: context.runId,
-    capability: "pupu",
-    intent: "pupu.readonly_plan",
-    presentationMode: "canvas",
-    component: "pupu.purchase-plan",
-    state: "assembling",
-    dataSource: "live",
-    payload: {
-      stage: "cart_ready",
-      title: "朴朴实时商品方案",
-      summary: `根据“${context.requestText}”读取了 ${products.length} 件实时商品。`,
-      meal: "按需采购",
-      people: 1,
-      budget: total,
-      constraints: ["仅使用实时数据", "首版只读，不修改购物车"],
-      decisionSummary: "商品、价格与库存均来自本次朴朴 CLI 实时读取。",
-      products,
-      total,
-      currency: "CNY",
-      cartVersion: 0,
-      estimatedDelivery: "以朴朴实时页面为准",
+    type: "presentation.updated",
+    requestId: context.requestId,
+    presentation: {
+      capability: "pupu",
+      component: "pupu.purchase-plan",
+      mode: "canvas",
+      dataSource: "live",
+      payload: {
+        stage: "cart_ready",
+        title: "朴朴实时商品方案",
+        summary: `根据“${context.requestText}”读取了 ${products.length} 件实时商品。`,
+        meal: "按需采购",
+        people: 1,
+        constraints: ["仅使用实时数据", "首版只读，不修改购物车"],
+        decisionSummary: "商品、价格与库存均来自本次朴朴 CLI 实时读取。",
+        products,
+        estimatedTotal: total,
+        currency: "CNY",
+        cartVersion: 0,
+        estimatedDelivery: "以朴朴实时页面为准",
+      },
     },
-    occurredAt,
   };
 }
 
 export function mapHermesEvent(
   event: HermesRunEvent,
   context: HermesEventContext,
-): JourneyEvent | AgentUIEvent<PupuPurchasePayload> | null {
+): JourneyEvent | null {
   switch (event.type) {
     case "run.started":
-      return { type: "stream.started", requestId: context.requestId };
+      return {
+        type: "stream.started",
+        requestId: context.requestId,
+        runId: context.runId,
+      };
     case "tool.started": {
       const presentation = toolPresentation[event.tool_name] || {
         label: "执行只读工具",
         detail: "正在读取实时数据",
       };
       context.trace = [
-        ...context.trace.map((entry) => ({ ...entry, status: "complete" as const })),
+        ...context.trace.map((entry) => ({
+          ...entry,
+          status: "complete" as const,
+        })),
         {
           id: event.tool_call_id,
           label: presentation.label,
@@ -322,12 +329,14 @@ export function mapHermesEvent(
       };
     }
     case "run.completed":
+      if (context.terminalFailure) return null;
       return {
         type: "stream.finished",
         requestId: context.requestId,
         result: journeyResult(context.products, event.output?.summary),
       };
     case "run.failed": {
+      context.terminalFailure = true;
       const kind = safeErrorKind(event.error);
       return {
         type: "stream.failed",

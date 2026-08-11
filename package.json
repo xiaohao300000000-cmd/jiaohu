@@ -12,7 +12,8 @@
     "lint": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:live": "playwright test --config playwright.live.config.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.61",

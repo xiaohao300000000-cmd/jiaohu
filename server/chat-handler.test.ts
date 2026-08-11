@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { HermesRunEvent } from "../src/ai/hermes-event-adapter";
+import type { ToolArtifactIdentity } from "./tool-artifact";
 import { handleChatRequest } from "./chat-handler";
 
 const liveEnvelope = {
@@ -50,6 +51,28 @@ async function* events(): AsyncGenerator<HermesRunEvent> {
   };
 }
 
+async function* consecutiveEvents(): AsyncGenerator<HermesRunEvent> {
+  yield {
+    type: "tool.completed",
+    run_id: "run-1",
+    tool_name: "pupu_search_catalog",
+    tool_call_id: "run-1:pupu_search_catalog:1",
+    output: null,
+  };
+  yield {
+    type: "tool.completed",
+    run_id: "run-1",
+    tool_name: "pupu_read_cart",
+    tool_call_id: "run-1:pupu_read_cart:2",
+    output: null,
+  };
+  yield {
+    type: "run.completed",
+    run_id: "run-1",
+    output: { summary: "完成两次实时读取" },
+  };
+}
+
 describe("handleChatRequest", () => {
   it("streams typed AI SDK data parts without raw secrets", async () => {
     const request = new Request("http://localhost/api/chat", {
@@ -68,10 +91,14 @@ describe("handleChatRequest", () => {
     });
 
     const createRun = vi.fn(async () => ({ runId: "run-1" }));
+    const readToolArtifact = vi.fn(async (_identity: ToolArtifactIdentity) => ({
+      status: "ok" as const,
+      result: liveEnvelope,
+    }));
     const response = await handleChatRequest(request, {
       createRun,
       streamRun: () => events(),
-      readRunArtifact: async () => liveEnvelope,
+      readToolArtifact,
       createId: () => "session-1",
     });
     const body = await response.text();
@@ -79,12 +106,64 @@ describe("handleChatRequest", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     expect(body).toContain('"type":"data-journey"');
-    expect(body).toContain('"type":"data-pupu"');
+    expect(body).not.toContain('"type":"data-pupu"');
+    expect(body).toContain('"type":"presentation.updated"');
     expect(body).toContain('"dataSource":"live"');
     expect(body).not.toMatch(/authorization|cookie|reasoning_content|secret/i);
     expect(createRun).toHaveBeenCalledWith(
-      "帮我找牛奶", "journey-client-1", expect.any(AbortSignal),
+      "帮我找牛奶",
+      "journey-client-1",
+      expect.any(AbortSignal),
     );
+    expect(readToolArtifact).toHaveBeenCalledWith({
+      sessionId: "journey-client-1",
+      runId: "run-1",
+      toolCallId: "run-1:pupu_search_catalog:1",
+      toolName: "pupu_search_catalog",
+      sequence: 1,
+    });
+  });
+
+  it("correlates two consecutive Pupu completions with distinct sequences", async () => {
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: "journey-sequence-1",
+        messages: [
+          {
+            id: "message-1",
+            role: "user",
+            parts: [{ type: "text", text: "搜索牛奶并读取购物车" }],
+          },
+        ],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+    const readToolArtifact = vi.fn(async (_identity: ToolArtifactIdentity) => ({
+      status: "ok" as const,
+      result: liveEnvelope,
+    }));
+
+    const response = await handleChatRequest(request, {
+      createRun: async () => ({ runId: "run-1" }),
+      streamRun: () => consecutiveEvents(),
+      readToolArtifact,
+    });
+    await response.text();
+
+    expect(readToolArtifact).toHaveBeenCalledTimes(2);
+    expect(readToolArtifact.mock.calls.map(([identity]) => identity)).toEqual([
+      expect.objectContaining({
+        toolCallId: "run-1:pupu_search_catalog:1",
+        toolName: "pupu_search_catalog",
+        sequence: 1,
+      }),
+      expect.objectContaining({
+        toolCallId: "run-1:pupu_read_cart:2",
+        toolName: "pupu_read_cart",
+        sequence: 2,
+      }),
+    ]);
   });
 
   it("returns a safe typed error for an invalid request", async () => {
@@ -97,7 +176,7 @@ describe("handleChatRequest", () => {
     const response = await handleChatRequest(request, {
       createRun: async () => ({ runId: "never" }),
       streamRun: () => events(),
-      readRunArtifact: async () => null,
+      readToolArtifact: async () => ({ status: "missing" }),
       createId: () => "session-invalid",
     });
 

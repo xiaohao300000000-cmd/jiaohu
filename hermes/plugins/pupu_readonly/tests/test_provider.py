@@ -124,17 +124,36 @@ def test_persists_validated_result_by_safe_task_id(tmp_path, monkeypatch):
         }
     )
 
-    path = persist_run_result(
+    first_path = persist_run_result(
         envelope,
         task_id="session-1",
         tool_name="pupu_capabilities",
+        run_id="run-1",
+        tool_call_id="run-1:pupu_capabilities:1",
     )
+    first = json.loads(first_path.read_text())
+    first_mode = first_path.stat().st_mode
+    first_path.unlink()
 
-    saved = json.loads(path.read_text())
-    assert saved["task_id"] == "session-1"
-    assert saved["tool_name"] == "pupu_capabilities"
-    assert saved["result"]["operation"] == "pupu.capabilities"
-    assert path.stat().st_mode & 0o777 == 0o600
+    second_path = persist_run_result(
+        envelope,
+        task_id="session-1",
+        tool_name="pupu_read_cart",
+        run_id="run-1",
+        tool_call_id="call-2",
+    )
+    second = json.loads(second_path.read_text())
+
+    assert first_path != second_path
+    assert first["task_id"] == "session-1"
+    assert first["run_id"] == "run-1"
+    assert first["tool_call_id"] == "run-1:pupu_capabilities:1"
+    assert first["sequence"] == 1
+    assert second["sequence"] == 2
+    assert second["tool_name"] == "pupu_read_cart"
+    assert first["result"]["operation"] == "pupu.capabilities"
+    assert first_mode & 0o777 == 0o600
+    assert second_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_rejects_unsafe_task_id_for_result_path(tmp_path, monkeypatch):

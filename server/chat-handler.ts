@@ -1,24 +1,17 @@
-import {
-  createUIMessageStream,
-  createUIMessageStreamResponse,
-} from "ai";
-import type {
-  AgentUIEvent,
-  PupuPurchasePayload,
-} from "../src/components/agent/agent-ui-event";
+import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import {
   createHermesEventContext,
   mapHermesEvent,
   type HermesRunEvent,
 } from "../src/ai/hermes-event-adapter";
 import type { JourneyUIMessage } from "../src/ai/journey-ui-message";
-import type { JourneyEvent } from "../src/components/journey/types";
 import { getHermesConfig } from "./config";
+import { createHermesRun, streamHermesRun } from "./hermes-client";
 import {
-  createHermesRun,
-  readRunArtifact,
-  streamHermesRun,
-} from "./hermes-client";
+  readToolArtifact,
+  type ToolArtifactIdentity,
+  type ToolArtifactReadResult,
+} from "./tool-artifact";
 
 interface ChatDependencies {
   createRun?: (
@@ -30,7 +23,9 @@ interface ChatDependencies {
     runId: string,
     signal?: AbortSignal,
   ) => AsyncIterable<HermesRunEvent>;
-  readRunArtifact?: (sessionId: string) => Promise<unknown | null>;
+  readToolArtifact?: (
+    identity: ToolArtifactIdentity,
+  ) => Promise<ToolArtifactReadResult>;
   createId?: () => string;
 }
 
@@ -65,12 +60,6 @@ function extractInput(body: unknown): string | null {
     .join("\n")
     .trim();
   return text || null;
-}
-
-function isPupuEvent(
-  event: JourneyEvent | AgentUIEvent<PupuPurchasePayload>,
-): event is AgentUIEvent<PupuPurchasePayload> {
-  return "capability" in event;
 }
 
 export async function handleChatRequest(
@@ -111,36 +100,53 @@ export async function handleChatRequest(
     dependencies.streamRun ||
     ((runId: string, signal?: AbortSignal) =>
       streamHermesRun(runId, config, signal));
-  const artifactReader = dependencies.readRunArtifact || readRunArtifact;
+  const artifactReader = dependencies.readToolArtifact || readToolArtifact;
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {
-      const { runId } = await createRun(input, sessionId, request.signal);
-      writer.write({ type: "message-metadata", messageMetadata: { runId } });
-      const context = createHermesEventContext(sessionId, input, runId);
-      const started = mapHermesEvent(
-        { type: "run.started", run_id: runId },
-        context,
-      );
-      if (started && !isPupuEvent(started)) {
-        writer.write({ type: "data-journey", data: started });
-      }
+      try {
+        const { runId } = await createRun(input, sessionId, request.signal);
+        writer.write({ type: "message-metadata", messageMetadata: { runId } });
+        const context = createHermesEventContext(sessionId, input, runId);
+        const started = mapHermesEvent(
+          { type: "run.started", run_id: runId },
+          context,
+        );
+        if (started) writer.write({ type: "data-journey", data: started });
 
-      for await (const sourceEvent of streamRun(runId, request.signal)) {
-        let event = sourceEvent;
-        if (sourceEvent.type === "tool.completed") {
-          event = {
-            ...sourceEvent,
-            output: await artifactReader(sessionId),
-          };
-        }
-        const mapped = mapHermesEvent(event, context);
-        if (!mapped) continue;
-        if (isPupuEvent(mapped)) {
-          writer.write({ type: "data-pupu", data: mapped });
-        } else {
+        let toolSequence = 0;
+        for await (const sourceEvent of streamRun(runId, request.signal)) {
+          let event = sourceEvent;
+          if (
+            sourceEvent.type === "tool.completed" &&
+            sourceEvent.tool_name.startsWith("pupu_")
+          ) {
+            toolSequence += 1;
+            const artifact = await artifactReader({
+              sessionId,
+              runId,
+              toolCallId: sourceEvent.tool_call_id,
+              toolName: sourceEvent.tool_name,
+              sequence: toolSequence,
+            });
+            event = {
+              ...sourceEvent,
+              output:
+                artifact.status === "ok"
+                  ? artifact.result
+                  : {
+                      kind: "invalid_result",
+                      artifactStatus: artifact.status,
+                    },
+            };
+          }
+          const mapped = mapHermesEvent(event, context);
+          if (!mapped) continue;
           writer.write({ type: "data-journey", data: mapped });
         }
+      } catch (error) {
+        if (request.signal.aborted) return;
+        throw error;
       }
     },
     onError: () => "实时服务暂时不可用，请稍后重试。",
