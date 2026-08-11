@@ -19,6 +19,7 @@ type PupuPresentation = Extract<
 interface PupuPurchaseCardProps {
   presentation: PupuPresentation;
   instanceId: string;
+  runId?: string;
   onAddToCart?: () => void;
   readOnly?: boolean;
 }
@@ -26,6 +27,7 @@ interface PupuPurchaseCardProps {
 export function PupuPurchaseCard({
   presentation,
   instanceId,
+  runId,
   onAddToCart,
   readOnly = false,
 }: PupuPurchaseCardProps) {
@@ -57,6 +59,7 @@ export function PupuPurchaseCard({
       aria-labelledby="pupu-purchase-title"
       data-component={presentation.component}
       data-source={presentation.dataSource}
+      data-run-id={runId}
       layoutId={`journey-${instanceId}-pupu-surface`}
       transition={JOURNEY_SPRINGS.groundedSettle}
     >

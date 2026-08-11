@@ -10,6 +10,7 @@ type PupuPresentation = Extract<
 
 interface PresentationRendererContext {
   instanceId: string;
+  runId?: string;
   readOnly: boolean;
 }
 
@@ -23,6 +24,7 @@ const presentationRenderers = {
     <PupuPurchaseCard
       presentation={presentation}
       instanceId={context.instanceId}
+      runId={context.runId}
       readOnly={context.readOnly}
     />
   )) satisfies PupuRenderer,
@@ -41,6 +43,7 @@ export function JourneyPresentationRenderer({
   if (presentation?.component === "pupu.purchase-plan") {
     return presentationRenderers["pupu.purchase-plan"](presentation, {
       instanceId: snapshot.activeRequestId || "idle",
+      runId: snapshot.runId || undefined,
       readOnly: true,
     });
   }
