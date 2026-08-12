@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
+import stat
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 ACCOUNT = re.compile(r"^acct_[a-f0-9]{32}$")
@@ -49,18 +49,27 @@ def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
     if not SAFE_ID.fullmatch(task_id):
         raise ScopeTicketError("task identity is unsafe")
     source = root / f"{task_id}.json"
-    claimed = root / f".{task_id}.{uuid4().hex}.consuming"
+    valid = False
     try:
-        source.replace(claimed)
-    except FileNotFoundError as exc:
-        raise ScopeTicketError("scope ticket missing") from exc
-    try:
-        if claimed.stat().st_mode & 0o777 != 0o600:
-            raise ScopeTicketError("scope ticket permissions are invalid")
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
         try:
-            value = json.loads(claimed.read_text(encoding="utf-8"))
+            descriptor = os.open(source, flags)
+        except FileNotFoundError as exc:
+            raise ScopeTicketError("scope ticket missing") from exc
+        try:
+            mode = os.fstat(descriptor).st_mode
+            if not stat.S_ISREG(mode) or stat.S_IMODE(mode) != 0o600:
+                raise ScopeTicketError("scope ticket permissions are invalid")
+            with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+                descriptor = -1
+                value = json.load(handle)
         except (json.JSONDecodeError, OSError) as exc:
             raise ScopeTicketError("scope ticket is malformed") from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
         if not isinstance(value, dict) or value.get("version") != 1:
             raise ScopeTicketError("scope ticket is malformed")
         if value.get("sessionId") != task_id:
@@ -80,11 +89,13 @@ def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
             raise ScopeTicketError("accounts root is not allowlisted")
         if expected_data and data_root != Path(expected_data):
             raise ScopeTicketError("data root is not allowlisted")
+        valid = True
         return TrustedPupuScope(
             account_id=account_id,
             accounts_root=accounts_root,
             data_root=data_root,
         )
     finally:
-        claimed.unlink(missing_ok=True)
+        if not valid:
+            source.unlink(missing_ok=True)
 

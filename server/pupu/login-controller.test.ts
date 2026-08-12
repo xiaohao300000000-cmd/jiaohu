@@ -64,8 +64,8 @@ describe("PupuLoginController", () => {
       .mockResolvedValueOnce({ ok: true, status: "sms_requested" })
       .mockResolvedValueOnce({ ok: true, status: "succeeded", data: { login_saved: true } })
       .mockResolvedValueOnce({
-        ok: true, status: "succeeded",
-        data: { status: "ready", auth_present: true, auth_saved: true, last_verify_code_errcode: 0 },
+        ok: true, status: "ready",
+        data: { auth_present: true, auth_saved: true, last_verify_code_errcode: 0 },
       });
     const controller = new PupuLoginController({ execute, attemptTtlMs: 60_000, resendCooldownMs: 30_000 });
     await controller.start("session-a", scope, "13000000000");

@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { chmod, mkdir, open, rename, unlink } from "node:fs/promises";
+import { chmod, mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -66,6 +66,29 @@ export class PupuScopeTicketStore {
   async remove(sessionId: string): Promise<void> {
     if (!SAFE_ID.test(sessionId)) return;
     await unlink(join(this.options.root, `${sessionId}.json`)).catch(() => undefined);
+  }
+  async sweepExpired(): Promise<number> {
+    const entries = await readdir(this.options.root, { withFileTypes: true })
+      .catch(() => []);
+    let removed = 0;
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const path = join(this.options.root, entry.name);
+      let expiresAt = Number.NaN;
+      try {
+        const value = JSON.parse(await readFile(path, "utf8")) as { expiresAt?: unknown };
+        if (typeof value.expiresAt === "string") {
+          expiresAt = Date.parse(value.expiresAt);
+        }
+      } catch {
+        expiresAt = Number.NaN;
+      }
+      if (!Number.isFinite(expiresAt) || expiresAt <= this.now()) {
+        await unlink(path).catch(() => undefined);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 }
 

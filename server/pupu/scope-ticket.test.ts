@@ -32,5 +32,42 @@ describe("PupuScopeTicketStore", () => {
       accountsRoot: "relative", dataRoot: "/srv/data",
     })).rejects.toThrow("unsafe");
   });
-});
 
+
+  it("removes only the completed run ticket", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pupu-ticket-"));
+    const store = new PupuScopeTicketStore({ root, ttlMs: 60_000, now: () => 1000 });
+    const first = await store.issue({
+      sessionId: "journey-a", accountId: "acct_0123456789abcdef0123456789abcdef",
+      accountsRoot: "/srv/accounts", dataRoot: "/srv/data",
+    });
+    const second = await store.issue({
+      sessionId: "journey-b", accountId: "acct_0123456789abcdef0123456789abcdef",
+      accountsRoot: "/srv/accounts", dataRoot: "/srv/data",
+    });
+
+    await store.remove("journey-a");
+
+    await expect(stat(first.path)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(second.path)).resolves.toBeDefined();
+  });
+
+  it("sweeps only expired tickets", async () => {
+    let now = 1000;
+    const root = await mkdtemp(join(tmpdir(), "pupu-ticket-"));
+    const store = new PupuScopeTicketStore({ root, ttlMs: 60_000, now: () => now });
+    const expired = await store.issue({
+      sessionId: "journey-expired", accountId: "acct_0123456789abcdef0123456789abcdef",
+      accountsRoot: "/srv/accounts", dataRoot: "/srv/data",
+    });
+    now = 31_000;
+    const active = await store.issue({
+      sessionId: "journey-active", accountId: "acct_0123456789abcdef0123456789abcdef",
+      accountsRoot: "/srv/accounts", dataRoot: "/srv/data",
+    });
+    now = 62_000;
+    expect(await store.sweepExpired()).toBe(1);
+    await expect(stat(expired.path)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(active.path)).resolves.toBeDefined();
+  });
+});

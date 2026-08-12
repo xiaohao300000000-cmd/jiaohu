@@ -46,7 +46,7 @@ function isSmsRequested(result: Record<string, unknown>): boolean {
 
 function isReady(result: Record<string, unknown>): boolean {
   const data = object(result.data);
-  return data.status === "ready" &&
+  return (result.status === "ready" || data.status === "ready") &&
     data.auth_present === true &&
     data.auth_saved === true &&
     data.last_verify_code_errcode === 0;
