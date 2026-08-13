@@ -14,6 +14,7 @@ interface PresentationRendererContext {
   instanceId: string;
   runId?: string;
   readOnly: boolean;
+  task: JourneySnapshot["task"];
 }
 
 type PupuRenderer = (
@@ -29,6 +30,7 @@ const presentationRenderers = {
       runId={context.runId}
       readOnly={context.readOnly}
       enableCommerce={!context.readOnly}
+      task={context.task}
     />
   )) satisfies PupuRenderer,
 };
@@ -86,6 +88,7 @@ export function JourneyPresentationRenderer({
       instanceId: snapshot.activeRequestId || "idle",
       runId: snapshot.runId || undefined,
       readOnly: false,
+      task: snapshot.task,
     });
   }
 

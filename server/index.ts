@@ -246,7 +246,7 @@ app.use(
     try {
       await sendWebResponse(
         await handlePupuCommerceRequest(request, {
-          sessionStore, addressController, cartController, checkoutController, config: loginConfig,
+          taskCoordinator, sessionStore, addressController, cartController, checkoutController, config: loginConfig,
         }),
         res,
       );

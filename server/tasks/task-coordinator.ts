@@ -207,6 +207,16 @@ export class TaskCoordinator {
     return clone(this.#required(taskId));
   }
 
+  assertPhase(
+    taskId: string,
+    expectedVersion: number,
+    phase: TaskPhase,
+  ): TaskSnapshot {
+    const current = this.#versioned(taskId, expectedVersion);
+    if (current.phase !== phase) throw new TaskConflictError("task phase conflict");
+    return clone(current);
+  }
+
   transition(taskId: string, expectedVersion: number, phase: TaskPhase): TaskSnapshot {
     const current = this.#versioned(taskId, expectedVersion);
     if (!LEGAL_TRANSITIONS[current.phase].includes(phase)) {

@@ -8,6 +8,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
 import type { JourneyPresentation } from "../journey/types";
+import type { TaskSnapshot } from "../../domain/task-contract";
 import { JOURNEY_SPRINGS } from "../../config/motion";
 import "./pupu-purchase.css";
 import { PupuCartConfirmCard } from "./PupuCartConfirmCard";
@@ -25,6 +26,7 @@ interface PupuPurchaseCardProps {
   onAddToCart?: () => void;
   readOnly?: boolean;
   enableCommerce?: boolean;
+  task?: TaskSnapshot | null;
 }
 
 export function PupuPurchaseCard({
@@ -34,6 +36,7 @@ export function PupuPurchaseCard({
   onAddToCart,
   readOnly = false,
   enableCommerce = false,
+  task,
 }: PupuPurchaseCardProps) {
   const commerce = useMemo(() => createPupuCommerceClient(), []);
   const [failedImages, setFailedImages] = useState<Set<string>>(
@@ -187,11 +190,12 @@ export function PupuPurchaseCard({
         )}
       </AnimatePresence>
 
-      {enableCommerce && runId && payload.products.length > 0 && (
+      {enableCommerce && runId && task && task.phase === "awaiting_cart_confirmation" && payload.products.length > 0 && (
         <PupuCartConfirmCard
           products={payload.products}
-          onPreview={() => commerce.previewCart(runId, payload.products)}
-          onCommit={commerce.commitCart}
+          task={task}
+          planId={runId}
+          commerce={commerce}
         />
       )}
 

@@ -12,6 +12,35 @@ function liveResponse(requestId: string, includePupu = false): Response {
         type: "data-journey",
         data: { type: "stream.started", requestId, runId: "run-live-1" },
       });
+      writer.write({
+        type: "data-journey",
+        data: {
+          type: "task.updated",
+          requestId,
+          task: {
+            taskId: "task-live-1",
+            version: 2,
+            requestText: "朴朴搜索商品",
+            domain: "commerce",
+            goal: "find_products",
+            phase: "awaiting_cart_confirmation",
+            context: {
+              dietaryRequirements: [],
+              requirements: ["朴朴搜索商品"],
+              selectedProducts: [{
+                productId: "store-1",
+                name: "鲜牛奶",
+                quantity: 1,
+                unitPriceCents: 1290,
+                source: "pupu_live",
+              }],
+            },
+            requestedCapabilities: ["commerce.catalog.search"],
+            allowedCapabilities: ["commerce.cart.prepare"],
+            nextActions: ["prepare_cart"],
+          },
+        },
+      });
       if (includePupu) {
         writer.write({
           type: "data-journey",
