@@ -3,6 +3,7 @@ import type {
   PupuPurchasePayload,
 } from "../agent/agent-ui-event";
 import type { PresentationMode } from "../home/presentation";
+import type { TaskSnapshot } from "../../domain/task-contract";
 
 export type JourneyState =
   | "idle"
@@ -134,6 +135,7 @@ export interface JourneyError {
 export type JourneyEvent =
   | { type: "request.sent"; requestId: string; text: string }
   | { type: "stream.started"; requestId: string; runId: string }
+  | { type: "task.updated"; requestId: string; task: TaskSnapshot }
   | {
       type: "presentation.updated";
       requestId: string;
@@ -177,6 +179,7 @@ export interface JourneySnapshot {
   activeRequestId: string | null;
   requestText: string;
   runId: string | null;
+  task: TaskSnapshot | null;
   trace: TraceEntry[];
   partialResult: PartialJourneyResult | null;
   result: JourneyResult | null;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { TaskSnapshot } from "../../domain/task-contract";
 import { initialJourneySnapshot, journeyReducer } from "./journey-reducer";
 import type {
   JourneyPresentation,
@@ -8,6 +9,24 @@ import type {
 
 const requestText = "今晚三个人吃火锅，微辣，200元以内。";
 
+const searchingTask: TaskSnapshot = {
+  taskId: "task-1",
+  version: 1,
+  requestText,
+  domain: "commerce",
+  goal: "find_products",
+  phase: "searching_catalog",
+  context: {
+    peopleCount: 3,
+    budgetCents: 20000,
+    dietaryRequirements: ["微辣"],
+    requirements: ["微辣"],
+    selectedProducts: [],
+  },
+  requestedCapabilities: ["commerce.catalog.search"],
+  allowedCapabilities: ["commerce.catalog.search"],
+  nextActions: [],
+};
 const trace: TraceEntry[] = [
   {
     id: "constraint-budget",
@@ -65,6 +84,64 @@ const livePupuPresentation: JourneyPresentation = {
 };
 
 describe("journeyReducer", () => {
+  it("stores task updates only for the active request", () => {
+    const receiving = journeyReducer(initialJourneySnapshot, {
+      type: "request.sent", requestId: "request-1", text: requestText,
+    });
+    const ignored = journeyReducer(receiving, {
+      type: "task.updated", requestId: "request-old", task: searchingTask,
+    });
+    expect(ignored.task).toBeNull();
+
+    const updated = journeyReducer(receiving, {
+      type: "task.updated", requestId: "request-1", task: searchingTask,
+    });
+    expect(updated.task).toEqual(searchingTask);
+    expect(updated.state).toBe("reasoning");
+  });
+
+  it("keeps a gated task phase while later presentation and trace events arrive", () => {
+    const receiving = journeyReducer(initialJourneySnapshot, {
+      type: "request.sent", requestId: "request-1", text: requestText,
+    });
+    const awaitingLoginTask: TaskSnapshot = {
+      ...searchingTask,
+      phase: "awaiting_login",
+      allowedCapabilities: [],
+    };
+    const withTask = journeyReducer(receiving, {
+      type: "task.updated", requestId: "request-1", task: awaitingLoginTask,
+    });
+    const withPresentation = journeyReducer(withTask, {
+      type: "presentation.updated",
+      requestId: "request-1",
+      presentation: {
+        capability: "pupu",
+        component: "pupu.login",
+        mode: "anchored",
+        dataSource: "live",
+        payload: { phase: "phone" },
+      },
+    });
+    const withTrace = journeyReducer(withPresentation, {
+      type: "trace.updated", requestId: "request-1", entries: trace,
+    });
+
+    expect(withTrace.task).toEqual(awaitingLoginTask);
+    expect(withTrace.state).toBe("awaiting_input");
+  });
+
+  it("retains the previous task while a continuation request starts", () => {
+    const active = {
+      ...initialJourneySnapshot,
+      task: searchingTask,
+    };
+    const receiving = journeyReducer(active, {
+      type: "request.sent", requestId: "request-2", text: "牛奶改成两盒",
+    });
+
+    expect(receiving.task).toEqual(searchingTask);
+  });
   it("moves a normalized request through receiving, reasoning, assembling, and ready", () => {
     const receiving = journeyReducer(initialJourneySnapshot, {
       type: "request.sent",

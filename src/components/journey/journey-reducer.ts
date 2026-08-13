@@ -1,9 +1,32 @@
-import type { JourneyEvent, JourneySnapshot } from "./types";
+import type { TaskPhase } from "../../domain/task-contract";
+import type { JourneyEvent, JourneySnapshot, JourneyState } from "./types";
+
+function gatedStateFor(phase: TaskPhase | undefined): JourneyState | null {
+  switch (phase) {
+    case "awaiting_login":
+    case "awaiting_address":
+    case "editing_plan":
+    case "awaiting_cart_confirmation":
+    case "awaiting_order_confirmation":
+    case "awaiting_payment":
+    case "blocked":
+      return "awaiting_input";
+    case "searching_catalog":
+    case "writing_cart":
+    case "creating_order":
+      return "reasoning";
+    case "completed":
+      return "ready";
+    default:
+      return null;
+  }
+}
 
 export const initialJourneySnapshot: JourneySnapshot = {
   state: "idle",
   activeRequestId: null,
   runId: null,
+  task: null,
   requestText: "",
   trace: [],
   partialResult: null,
@@ -52,6 +75,12 @@ export function journeyReducer(
   }
 
   switch (event.type) {
+    case "task.updated":
+      return {
+        ...snapshot,
+        state: gatedStateFor(event.task.phase) ?? snapshot.state,
+        task: event.task,
+      };
     case "stream.started":
       return {
         ...snapshot,
@@ -71,12 +100,16 @@ export function journeyReducer(
         : "assembling";
       return {
         ...snapshot,
-        state,
+        state: gatedStateFor(snapshot.task?.phase) ?? state,
         presentation: event.presentation,
       };
     }
     case "trace.updated":
-      return { ...snapshot, state: "reasoning", trace: event.entries };
+      return {
+        ...snapshot,
+        state: gatedStateFor(snapshot.task?.phase) ?? "reasoning",
+        trace: event.entries,
+      };
     case "result.partial":
       return {
         ...snapshot,
