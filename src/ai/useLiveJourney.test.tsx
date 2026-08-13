@@ -107,6 +107,7 @@ describe("useLiveJourney", () => {
       ? await fetchInput.clone().json() as { requestId: string }
       : JSON.parse(String(fetchInit?.body)) as { requestId: string };
     const requestId = body.requestId;
+    expect(body).not.toHaveProperty("pupuIntent");
     resolveFetch?.(streamResponse(requestId));
     await act(async () => submission);
 

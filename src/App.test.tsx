@@ -141,7 +141,6 @@ describe("live Agent home", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "朴朴搜索商品" }));
-    await user.click(await screen.findByRole("button", { name: /地址 1/ }));
 
     expect(
       await screen.findByRole("heading", { name: "按需采购 · 1 人" }),

@@ -45,9 +45,3 @@ export function resolveDemoPresentation(input: string): TaskPresentation {
 
   return { mode: "canvas", kind: "plan", input: normalized };
 }
-export function isPupuTask(input: string): boolean {
-  const normalized = input.trim();
-  if (/(?:pupu|朴朴)/i.test(normalized)) return true;
-  const kind = resolveDemoPresentation(normalized).kind;
-  return kind === "pupu_order" || kind === "pupu_purchase";
-}
