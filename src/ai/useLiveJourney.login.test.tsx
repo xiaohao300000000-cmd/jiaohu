@@ -27,6 +27,7 @@ function ready(requestId: string): Response {
 describe("Pupu login preflight", () => {
   it("holds the task, logs in, and resumes Hermes exactly once", async () => {
     const calls: string[] = [];
+    const chatBodies: Array<Record<string, unknown>> = [];
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       calls.push(url);
@@ -42,6 +43,7 @@ describe("Pupu login preflight", () => {
       }
       if (url === "/api/chat") {
         const body = JSON.parse(String(init?.body));
+        chatBodies.push(body);
         return ready(body.requestId);
       }
       throw new Error(`unexpected ${url}`);
@@ -68,6 +70,7 @@ describe("Pupu login preflight", () => {
     await act(async () => result.current.selectAddress("receiver-a"));
     await waitFor(() => expect(result.current.snapshot.state).toBe("ready"));
     expect(calls.filter((url) => url === "/api/chat")).toHaveLength(1);
+    expect(chatBodies[0]).toMatchObject({ pupuIntent: true });
 
     await act(async () => result.current.selectAddress("receiver-a"));
     expect(calls.filter((url) => url === "/api/chat")).toHaveLength(1);

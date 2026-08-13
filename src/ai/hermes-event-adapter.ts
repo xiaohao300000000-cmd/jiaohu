@@ -305,6 +305,7 @@ export function mapHermesEvent(
   event: HermesRunEvent,
   context: HermesEventContext,
 ): JourneyEvent | null {
+  if (context.terminalFailure) return null;
   switch (event.type) {
     case "run.started":
       return {

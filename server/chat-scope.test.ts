@@ -19,6 +19,7 @@ describe("chat Pupu scope lifecycle", () => {
       headers: { "content-type": "application/json", cookie: "pupu_session=opaque" },
       body: JSON.stringify({
         requestId: "journey-scope-1",
+        pupuIntent: true,
         messages: [{ role: "user", parts: [{ type: "text", text: "find milk" }] }],
       }),
     });
@@ -35,6 +36,27 @@ describe("chat Pupu scope lifecycle", () => {
     await response.text();
 
     expect(order).toEqual(["prepare:journey-scope-1", "create", "cleanup:journey-scope-1"]);
+  });
+
+  it("does not prepare Pupu scope for an ordinary chat without an explicit intent", async () => {
+    const preparePupuScope = vi.fn(async () => undefined);
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "journey-chat-1",
+        messages: [{ role: "user", parts: [{ type: "text", text: "写一句问候" }] }],
+      }),
+    });
+    const response = await handleChatRequest(request, {
+      preparePupuScope,
+      createRun: async () => ({ runId: "run-1" }),
+      streamRun: () => completed(),
+      readToolArtifact: async () => ({ status: "missing" }),
+    });
+    await response.text();
+
+    expect(preparePupuScope).not.toHaveBeenCalled();
   });
 });
 

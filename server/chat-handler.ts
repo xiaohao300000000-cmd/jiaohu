@@ -35,15 +35,29 @@ interface ChatDependencies {
 function isComplexMealRequest(input: string): boolean {
   return /(?:低脂|三道菜|营养全面|晚餐|做.*菜)/.test(input);
 }
-function hermesInput(input: string): string {
-  if (!isComplexMealRequest(input)) return input;
+function hermesInput(input: string, pupuIntent: boolean): string {
+  if (!pupuIntent) return input;
+  if (!isComplexMealRequest(input)) {
+    const cartRead = /购物车|购车/.test(input);
+    return [
+      input,
+      "",
+      "[LIQUIDJOURNEY_EXECUTION_CONTRACT]",
+      "The browser has already completed Pupu login and delivery-address verification.",
+      cartRead
+        ? "Call pupu_read_cart exactly once."
+        : "Call pupu_search_catalog exactly once using the product request above.",
+      "Do not call pupu_auth_status or pupu_capabilities.",
+      "After the tool result, answer only from the returned live data.",
+    ].join("\n");
+  }
   return [
     input,
     "",
     "[LIQUIDJOURNEY_EXECUTION_CONTRACT]",
     "This is a Pupu meal-shopping request.",
     "Call pupu_search_meal_catalog exactly once with queries for lean protein, vegetables, and tofu or another core ingredient.",
-    "Do not call pupu_search_catalog, pupu_read_cart, or pupu_auth_status.",
+    "Do not call pupu_search_catalog, pupu_read_cart, pupu_auth_status, or pupu_capabilities.",
     "After the tool result, produce exactly three simple low-fat dishes grounded in returned in-stock SKUs, with nutrition coverage and substitutions.",
     "Never return a prose-only or zero-price plan.",
   ].join("\n");
@@ -111,6 +125,11 @@ export async function handleChatRequest(
     requestedId && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(requestedId)
       ? requestedId
       : dependencies.createId?.() || `journey-${crypto.randomUUID()}`;
+  const pupuIntent =
+    body !== null &&
+    typeof body === "object" &&
+    "pupuIntent" in body &&
+    (body as { pupuIntent?: unknown }).pupuIntent === true;
   const config = getHermesConfig();
   const createRun =
     dependencies.createRun ||
@@ -126,11 +145,11 @@ export async function handleChatRequest(
     execute: async ({ writer }) => {
       let scopePrepared = false;
       try {
-        if (dependencies.preparePupuScope) {
+        if (pupuIntent && dependencies.preparePupuScope) {
           await dependencies.preparePupuScope(request, sessionId, input);
           scopePrepared = true;
         }
-        const { runId } = await createRun(hermesInput(input), sessionId, request.signal);
+        const { runId } = await createRun(hermesInput(input, pupuIntent), sessionId, request.signal);
         writer.write({ type: "message-metadata", messageMetadata: { runId } });
         const context = createHermesEventContext(sessionId, input, runId);
         const started = mapHermesEvent(

@@ -59,3 +59,21 @@ describe("PupuAddressController", () => {
     await expect(controller.list(scope)).rejects.toThrow("deliverable");
   });
 });
+
+  it("reuses a recent address read and refreshes it after five minutes", async () => {
+    let now = 1_000;
+    const execute = vi.fn().mockResolvedValue(provider);
+    const controller = new PupuAddressController({
+      execute,
+      now: () => now,
+      cacheTtlMs: 300_000,
+    });
+
+    await controller.list(scope);
+    await controller.list(scope);
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    now += 300_001;
+    await controller.list(scope);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });

@@ -83,7 +83,7 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
   });
 
   const sendToHermes = useCallback(
-    async (text: string) => {
+    async (text: string, pupuIntent = false) => {
       const normalized = text.trim();
       if (!normalized) return;
       if (chat.status === "submitted" || chat.status === "streaming") {
@@ -94,7 +94,10 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
       activeText.current = normalized;
       dispatch({ type: "request.sent", requestId, text: normalized });
       try {
-        await chat.sendMessage({ text: normalized }, { body: { requestId } });
+        await chat.sendMessage(
+          { text: normalized },
+          { body: { requestId, ...(pupuIntent ? { pupuIntent: true } : {}) } },
+        );
       } catch {
         dispatch({
           type: "stream.failed",
@@ -162,7 +165,7 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     const held = heldTask.current;
     if (!held) return;
     heldTask.current = null;
-    await sendToHermes(held.text);
+    await sendToHermes(held.text, true);
   }, [sendToHermes]);
 
   const submit = useCallback(async (text: string) => {

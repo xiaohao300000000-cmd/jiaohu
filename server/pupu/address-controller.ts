@@ -1,6 +1,10 @@
 import { executeCommerceCommand } from "./commerce-cli";
 import type { AddressSelection, CommerceProviderResult, ProviderAddress, PupuCommerceScope, SavedAddressSummary } from "./commerce-types";
-interface Options { execute?: typeof executeCommerceCommand }
+interface Options {
+  execute?: typeof executeCommerceCommand;
+  now?: () => number;
+  cacheTtlMs?: number;
+}
 function text(value: unknown): string { return typeof value === "string" ? value.trim() : "" }
 function redact(address: ProviderAddress): SavedAddressSummary {
   const mobile = text(address.mobile);
@@ -18,15 +22,27 @@ function isUsable(address: ProviderAddress): boolean {
 export class PupuAddressController {
   private readonly execute: typeof executeCommerceCommand;
   private readonly addresses = new Map<string, Map<string, ProviderAddress>>();
+  private readonly addressExpiry = new Map<string, number>();
   private readonly selections = new Map<string, AddressSelection>();
-  constructor(options: Options = {}) { this.execute = options.execute || executeCommerceCommand }
+  private readonly now: () => number;
+  private readonly cacheTtlMs: number;
+  constructor(options: Options = {}) {
+    this.execute = options.execute || executeCommerceCommand;
+    this.now = options.now || Date.now;
+    this.cacheTtlMs = options.cacheTtlMs ?? 300_000;
+  }
   async list(scope: PupuCommerceScope): Promise<{ addresses: SavedAddressSummary[] }> {
+    const cached = this.addresses.get(scope.accountId);
+    if (cached && (this.addressExpiry.get(scope.accountId) || 0) > this.now()) {
+      return { addresses: [...cached.values()].map(redact) };
+    }
     const result: CommerceProviderResult = await this.execute(scope, { kind: "listAddresses" });
     const addresses = result.data?.addresses?.filter(isUsable) || [];
     if (result.ok === false || result.status === "failed" || addresses.length === 0) {
       throw new Error("No saved Pupu address is deliverable");
     }
     this.addresses.set(scope.accountId, new Map(addresses.map((address) => [address.id, address])));
+    this.addressExpiry.set(scope.accountId, this.now() + this.cacheTtlMs);
     return { addresses: addresses.map(redact) };
   }
   async select(scope: PupuCommerceScope, receiverId: string): Promise<AddressSelection> {

@@ -166,6 +166,37 @@ describe("handleChatRequest", () => {
     ]);
   });
 
+  it("gives an explicit Pupu search intent a single-tool execution contract", async () => {
+    const createRun = vi.fn(async (_input: string) => ({ runId: "run-1" }));
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: "journey-search-1",
+        pupuIntent: true,
+        messages: [{
+          id: "message-1",
+          role: "user",
+          parts: [{ type: "text", text: "帮我看看大瓶的牛奶" }],
+        }],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+    const response = await handleChatRequest(request, {
+      preparePupuScope: async () => undefined,
+      createRun,
+      streamRun: () => events(),
+      readToolArtifact: async () => ({
+        status: "ok" as const,
+        result: liveEnvelope,
+      }),
+    });
+    await response.text();
+
+    const prompt = createRun.mock.calls[0]?.[0] || "";
+    expect(prompt).toContain("Call pupu_search_catalog exactly once");
+    expect(prompt).toContain("Do not call pupu_auth_status or pupu_capabilities");
+  });
+
   it("returns a safe typed error for an invalid request", async () => {
     const request = new Request("http://localhost/api/chat", {
       method: "POST",
