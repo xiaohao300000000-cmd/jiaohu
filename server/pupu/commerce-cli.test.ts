@@ -19,6 +19,22 @@ describe("Pupu commerce CLI", () => {
     ]);
   });
 
+  it("builds scoped cart and checkout commands without generic argv", () => {
+    const binding = { receiverId: "receiver-a", storeId: "store-a", placeId: "place-a", placeZip: 350100 };
+    expect(buildCommerceCommand(scope, { kind: "readCart", binding, requestId: "read-1" })).toContain("scoped-read");
+    expect(buildCommerceCommand(scope, {
+      kind: "addCartItem", binding, requestId: "add-1", actorId: "browser-session",
+      itemPath: "/srv/runtime/item.json", approvalToken: "opaque-token",
+    })).toContain("scoped-add");
+    expect(buildCommerceCommand(scope, {
+      kind: "checkoutPreview", binding, requestId: "preview-1",
+    })).toContain("scoped-preview");
+    expect(buildCommerceCommand(scope, {
+      kind: "checkoutCreate", binding, requestId: "preview-1", previewId: "preview-1",
+      actorId: "browser-session", approvalToken: "opaque-token",
+    })).toContain("scoped-create-from-preview");
+  });
+
   it("rejects unsafe address scope", () => {
     expect(() => buildCommerceCommand(
       { ...scope, accountId: "../other" },

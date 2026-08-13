@@ -107,7 +107,7 @@ afterEach(() => {
 });
 
 describe("live Agent home", () => {
-  it("starts on the universal home with the real read-only channel disclosed", () => {
+  it("starts on the universal home with confirmed-operation disclosure", () => {
     installLiveFetch();
     render(<App />);
 
@@ -115,7 +115,7 @@ describe("live Agent home", () => {
       screen.getByRole("heading", { name: "今天想让我做什么？" }),
     ).toBeVisible();
     expect(
-      screen.getByText("Hermes 实时通道 · 朴朴首版只读模式"),
+      screen.getByText("Hermes 实时通道 · 朴朴操作均需确认"),
     ).toBeVisible();
   });
 
@@ -135,7 +135,7 @@ describe("live Agent home", () => {
     );
   });
 
-  it("renders only streamed live Pupu data and exposes no cart mutation", async () => {
+  it("renders only streamed live Pupu data and gates cart mutation behind preview", async () => {
     installLiveFetch(true);
     const user = userEvent.setup();
     render(<App />);
@@ -148,7 +148,8 @@ describe("live Agent home", () => {
     ).toBeVisible();
     expect(screen.getByText("¥12.90")).toBeVisible();
     expect(screen.queryByText(/预算/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "加入购物车" })).toBeNull();
+    expect(screen.getByRole("button", { name: "准备加入购物车" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "确认加入朴朴购物车" })).toBeNull();
     expect(screen.queryByText("示例数据")).toBeNull();
   });
 });

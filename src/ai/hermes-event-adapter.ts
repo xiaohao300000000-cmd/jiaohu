@@ -128,6 +128,7 @@ function extractItems(data: unknown): unknown[] | null {
 function toProduct(input: z.infer<typeof normalizedSkuSchema>): ProductSummary {
   return {
     productId: input.store_product_id,
+    providerProductId: input.product_id,
     name: input.name,
     specification: input.unit || "规格以朴朴实时信息为准",
     unitPrice: input.price_cents / 100,

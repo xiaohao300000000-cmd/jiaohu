@@ -24,6 +24,7 @@ export interface AgentUIEvent<TPayload> {
 
 export interface ProductSummary {
   productId: string;
+  providerProductId?: string;
   name: string;
   specification: string;
   unitPrice: number;

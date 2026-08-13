@@ -72,7 +72,7 @@ export default function App() {
               >
                 Pupu
               </a>
-              <span className="app-header__status">Hermes 实时只读</span>
+              <span className="app-header__status">Hermes 实时 · 操作需确认</span>
             </>
           )}
         </div>
@@ -132,7 +132,7 @@ export default function App() {
 
       {!isCanvas && (
         <footer className="app-footer">
-          <span>Hermes 实时通道 · 朴朴首版只读模式</span>
+          <span>Hermes 实时通道 · 朴朴操作均需确认</span>
         </footer>
       )}
     </div>

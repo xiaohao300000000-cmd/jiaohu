@@ -12,6 +12,9 @@ import { PupuScopeTicketStore } from "./pupu/scope-ticket";
 import { readPupuSessionCookie } from "./pupu/http-security";
 import { PupuAddressController } from "./pupu/address-controller";
 import { handlePupuAddressRequest } from "./pupu/address-router";
+import { PupuCartController } from "./pupu/cart-controller";
+import { handlePupuCommerceRequest } from "./pupu/commerce-router";
+import { PupuCheckoutController } from "./pupu/checkout-controller";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
@@ -31,6 +34,8 @@ const scopeTickets = new PupuScopeTicketStore({
   ttlMs: 120_000,
 });
 const addressController = new PupuAddressController();
+const cartController = new PupuCartController();
+const checkoutController = new PupuCheckoutController();
 
 function requestHeaders(
   headers: express.Request["headers"],
@@ -108,6 +113,15 @@ app.post(
             });
           },
           cleanupPupuScope: (sessionId) => scopeTickets.remove(sessionId),
+          registerPupuPlan: async (_sessionId, runId, products) => {
+            const token = readPupuSessionCookie(request.headers.get("cookie"));
+            if (!token) return;
+            const session = await sessionStore.resolve(token);
+            if (session.created) return;
+            const selection = addressController.getSelection(session.accountId);
+            if (!selection) return;
+            cartController.registerPlan(session.accountId, runId, selection, products);
+          },
         }),
         res,
       );
@@ -201,6 +215,36 @@ app.use(
             code: "address_unavailable",
             message: "暂时无法读取已保存地址，请稍后重试。",
           },
+        });
+      }
+    }
+  },
+);
+
+app.use(
+  "/api/pupu",
+  express.raw({ type: () => true, limit: "128kb" }),
+  async (req, res) => {
+    const method = req.method.toUpperCase();
+    const request = new Request(
+      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
+      {
+        method,
+        headers: requestHeaders(req.headers),
+        body: method === "GET" || method === "HEAD" ? undefined : req.body,
+      },
+    );
+    try {
+      await sendWebResponse(
+        await handlePupuCommerceRequest(request, {
+          sessionStore, addressController, cartController, checkoutController, config: loginConfig,
+        }),
+        res,
+      );
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).json({
+          error: { code: "commerce_unavailable", message: "朴朴交易服务暂时不可用。" },
         });
       }
     }

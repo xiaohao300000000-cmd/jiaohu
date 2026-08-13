@@ -29,6 +29,7 @@ interface ChatDependencies {
   createId?: () => string;
   preparePupuScope?: (request: Request, sessionId: string, input: string) => Promise<void>;
   cleanupPupuScope?: (sessionId: string) => Promise<void>;
+  registerPupuPlan?: (sessionId: string, runId: string, products: import("../src/components/agent/agent-ui-event").ProductSummary[]) => void;
 }
 
 function extractInput(body: unknown): string | null {
@@ -148,6 +149,9 @@ export async function handleChatRequest(
             };
           }
           const mapped = mapHermesEvent(event, context);
+          if (event.type === "run.completed" && dependencies.registerPupuPlan && context.products.length > 0) {
+            dependencies.registerPupuPlan(sessionId, runId, context.products);
+          }
           if (!mapped) continue;
           writer.write({ type: "data-journey", data: mapped });
         }
