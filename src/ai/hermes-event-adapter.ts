@@ -289,7 +289,7 @@ function mapPupuOutput(
         summary: `根据“${context.requestText}”读取了 ${products.length} 件实时商品。`,
         meal: "按需采购",
         people: 1,
-        constraints: ["仅使用实时数据", "首版只读，不修改购物车"],
+        constraints: ["仅使用实时数据", "写入购物车或创建订单前必须确认"],
         decisionSummary: "商品、价格与库存均来自本次朴朴 CLI 实时读取。",
         products: context.products,
         estimatedTotal: total,

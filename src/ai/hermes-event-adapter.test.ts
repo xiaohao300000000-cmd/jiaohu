@@ -93,6 +93,7 @@ describe("mapHermesEvent", () => {
             },
           ],
           estimatedTotal: 12.9,
+          constraints: ["仅使用实时数据", "写入购物车或创建订单前必须确认"],
         },
       },
     });
