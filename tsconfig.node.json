@@ -18,6 +18,7 @@
     "src/ai/journey-ui-message.ts",
     "src/components/agent/agent-ui-event.ts",
     "src/components/home/presentation.ts",
-    "src/components/journey/types.ts"
+    "src/components/journey/types.ts",
+    "src/domain/task-contract.ts"
   ]
 }
