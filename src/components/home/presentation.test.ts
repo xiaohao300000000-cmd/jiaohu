@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveDemoPresentation } from "./presentation";
+import { isPupuTask, resolveDemoPresentation } from "./presentation";
 
 describe("resolveDemoPresentation", () => {
   it.each(["查一下我的快递", "外卖到哪了", "今天会下雨吗"])(
@@ -35,6 +35,15 @@ describe("resolveDemoPresentation", () => {
   );
 
   it("defaults unknown requests to canvas", () => {
+
     expect(resolveDemoPresentation("帮我处理一下").mode).toBe("canvas");
+  });
+  it("classifies only deterministic Pupu capability inputs", () => {
+    expect(isPupuTask("买牛奶和鸡蛋")).toBe(true);
+    expect(isPupuTask("我今晚想做一个低脂的三道菜，要步骤简单、营养全面。")).toBe(true);
+    expect(isPupuTask("请使用 pupu_search_catalog 搜索牛奶")).toBe(true);
+    expect(isPupuTask("查一下我的朴朴订单")).toBe(true);
+    expect(isPupuTask("查一下我的快递")).toBe(false);
+    expect(isPupuTask("今天会下雨吗")).toBe(false);
   });
 });

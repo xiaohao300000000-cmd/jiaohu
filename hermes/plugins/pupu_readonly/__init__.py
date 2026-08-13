@@ -51,6 +51,23 @@ TOOL_DEFINITIONS = [
         ),
     ),
     (
+        "pupu_search_meal_catalog",
+        "catalog.meal-search",
+        _schema(
+            "pupu_search_meal_catalog",
+            "Sequentially search exactly three live Pupu ingredient groups for a meal plan.",
+            {
+                "queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 3,
+                    "maxItems": 3,
+                },
+            },
+            ["queries"],
+        ),
+    ),
+    (
         "pupu_get_product",
         "catalog.detail",
         _schema(
@@ -74,8 +91,13 @@ TOOL_DEFINITIONS = [
 def register(ctx: Any) -> None:
     for name, operation, schema in TOOL_DEFINITIONS:
         def handler(params, _operation=operation, _name=name, **kwargs):
-            result = run_pupu(_operation, dict(params or {}))
             task_id = kwargs.get("task_id")
+            arguments = dict(params or {})
+            arguments.pop("_trusted_task_id", None)
+            arguments.pop("_trusted_scope", None)
+            if isinstance(task_id, str) and task_id:
+                arguments["_trusted_task_id"] = task_id
+            result = run_pupu(_operation, arguments)
             if (
                 isinstance(task_id, str)
                 and task_id

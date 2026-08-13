@@ -59,12 +59,22 @@ export function journeyReducer(
         runId: event.runId,
         error: null,
       };
-    case "presentation.updated":
+    case "presentation.updated": {
+      const loginPhase =
+        event.presentation.component === "pupu.login"
+          ? event.presentation.payload.phase
+          : null;
+      const state = loginPhase
+        ? (["phone", "captcha", "sms", "error"].includes(loginPhase)
+            ? "awaiting_input"
+            : "reasoning")
+        : "assembling";
       return {
         ...snapshot,
-        state: "assembling",
+        state,
         presentation: event.presentation,
       };
+    }
     case "trace.updated":
       return { ...snapshot, state: "reasoning", trace: event.entries };
     case "result.partial":
@@ -91,6 +101,21 @@ export function journeyReducer(
         ...snapshot,
         state: "ready",
         result: event.result,
+        presentation:
+          snapshot.presentation?.component === "pupu.purchase-plan"
+            ? {
+                ...snapshot.presentation,
+                payload: {
+                  ...snapshot.presentation.payload,
+                  summary: event.result.summary,
+                  decisionSummary: event.result.summary,
+                  products: snapshot.presentation.payload.products.filter((product) =>
+                    event.result.items.some((item) => item.id === product.productId),
+                  ),
+                  estimatedTotal: event.result.totalAmount,
+                },
+              }
+            : snapshot.presentation,
         partialResult: event.result,
         awaitingInput: null,
         error: null,

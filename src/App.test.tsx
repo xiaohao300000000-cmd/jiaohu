@@ -81,7 +81,20 @@ function liveResponse(requestId: string, includePupu = false): Response {
 }
 
 function installLiveFetch(includePupu = false) {
-  const fetchMock = vi.fn(async (_url, init) => {
+  const fetchMock = vi.fn(async (input, init) => {
+    const url = String(input);
+    if (url === "/api/pupu/login/status") {
+      return Response.json({ phase: "connected" });
+    }
+    if (url === "/api/pupu/addresses") {
+      return Response.json({ addresses: [{
+        id: "receiver-a", label: "地址 1", region: "已保存区域",
+        detailHint: "3 栋 1201", phoneSuffix: "",
+      }] });
+    }
+    if (url === "/api/pupu/addresses/select") {
+      return Response.json({ selected: true, addressId: "receiver-a" });
+    }
     const body = JSON.parse(String(init?.body));
     return liveResponse(body.requestId, includePupu);
   });
@@ -94,7 +107,7 @@ afterEach(() => {
 });
 
 describe("live Agent home", () => {
-  it("starts on the universal home with the real read-only channel disclosed", () => {
+  it("starts on the universal home with confirmed-operation disclosure", () => {
     installLiveFetch();
     render(<App />);
 
@@ -102,7 +115,7 @@ describe("live Agent home", () => {
       screen.getByRole("heading", { name: "今天想让我做什么？" }),
     ).toBeVisible();
     expect(
-      screen.getByText("Hermes 实时通道 · 朴朴首版只读模式"),
+      screen.getByText("Hermes 实时通道 · 朴朴操作均需确认"),
     ).toBeVisible();
   });
 
@@ -122,19 +135,21 @@ describe("live Agent home", () => {
     );
   });
 
-  it("renders only streamed live Pupu data and exposes no cart mutation", async () => {
+  it("renders only streamed live Pupu data and gates cart mutation behind preview", async () => {
     installLiveFetch(true);
     const user = userEvent.setup();
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "朴朴搜索商品" }));
+    await user.click(await screen.findByRole("button", { name: /地址 1/ }));
 
     expect(
       await screen.findByRole("heading", { name: "按需采购 · 1 人" }),
     ).toBeVisible();
     expect(screen.getByText("¥12.90")).toBeVisible();
     expect(screen.queryByText(/预算/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "加入购物车" })).toBeNull();
+    expect(screen.getByRole("button", { name: "准备加入购物车" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "确认加入朴朴购物车" })).toBeNull();
     expect(screen.queryByText("示例数据")).toBeNull();
   });
 });

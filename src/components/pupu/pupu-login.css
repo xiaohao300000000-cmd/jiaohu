@@ -1,0 +1,34 @@
+.pupu-login {
+  display: grid;
+  gap: 20px;
+  width: min(100%, 620px);
+  margin-inline: auto;
+  padding: clamp(20px, 4vw, 30px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  background: rgba(9, 10, 15, 0.72);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(24px);
+}
+.pupu-login__header { display: flex; gap: 13px; align-items: center; }
+.pupu-login__header h2 { margin: 3px 0 0; color: #f4f5f2; font-size: 22px; }
+.pupu-login__icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 13px; background: rgba(16, 185, 129, .13); color: #10b981; box-shadow: 0 0 12px rgba(16, 185, 129, .18); }
+.pupu-login__eyebrow { color: #10b981; font-family: "SFMono-Regular", Consolas, monospace; font-size: 9px; letter-spacing: .12em; }
+.pupu-login__form, .pupu-login__captcha, .pupu-login__busy, .pupu-login__connected, .pupu-login__warning { display: grid; gap: 12px; }
+.pupu-login p, .pupu-login span { margin: 0; color: rgba(244, 245, 242, .62); line-height: 1.6; }
+.pupu-login label { color: rgba(244, 245, 242, .72); font-size: 12px; }
+.pupu-login input { width: 100%; min-height: 48px; padding: 0 14px; border: 1px solid rgba(255,255,255,.11); border-radius: 14px; outline: 0; background: rgba(255,255,255,.045); color: #f4f5f2; font-family: "SFMono-Regular", Consolas, monospace; }
+.pupu-login input:focus { border-color: rgba(16,185,129,.6); box-shadow: 0 0 0 3px rgba(16,185,129,.1); }
+.pupu-login button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border: 0; border-radius: 13px; background: #10b981; color: #06120e; font-weight: 700; cursor: pointer; box-shadow: 0 0 12px rgba(16,185,129,.2); }
+.pupu-login button:disabled { cursor: not-allowed; opacity: .42; }
+.pupu-login iframe { width: 100%; min-height: 390px; border: 1px solid rgba(255,255,255,.1); border-radius: 16px; background: white; }
+.pupu-login__busy { justify-items: center; padding: 28px 12px; text-align: center; }
+.pupu-login__spinner { color: #f59e0b; animation: pupu-login-spin 1s linear infinite; }
+@keyframes pupu-login-spin { to { transform: rotate(360deg); } }
+.pupu-login__connected { grid-template-columns: auto 1fr; align-items: center; color: #10b981; }
+.pupu-login__connected span { grid-column: 2; }
+.pupu-login__warning { padding: 14px; border: 1px solid rgba(245,158,11,.3); border-radius: 14px; background: rgba(245,158,11,.08); color: #f59e0b; }
+.pupu-login .pupu-login__link, .pupu-login .pupu-login__cancel { min-height: 36px; padding: 0; background: transparent; color: rgba(244,245,242,.55); font-weight: 500; box-shadow: none; }
+.pupu-login__cancel { justify-self: start; }
+@media (prefers-reduced-motion: reduce) { .pupu-login__spinner { animation: none; } }
+

@@ -1,0 +1,965 @@
+diff --git a/src/pupu_assistant/entrypoints/cli/main.py b/src/pupu_assistant/entrypoints/cli/main.py
+index 8c5a1f8..4ab4347 100755
+--- a/src/pupu_assistant/entrypoints/cli/main.py
++++ b/src/pupu_assistant/entrypoints/cli/main.py
+@@ -27,6 +27,7 @@ app = typer.Typer(
+ product_app = typer.Typer(help="Product-domain planning commands.")
+ account_app = typer.Typer(help="Authenticated Pupu account read commands.")
+ catalog_app = typer.Typer(help="Live Pupu catalog commands for agent callers.")
++address_app = typer.Typer(help="Scoped saved Pupu delivery-address commands.")
+ recipe_app = typer.Typer(help="Recipe to SKU resolution commands.")
+ cart_app = typer.Typer(help="Cart preview and safety commands.")
+ coupon_app = typer.Typer(help="Coupon/filler optimization commands.")
+@@ -39,6 +40,7 @@ checkout_app = typer.Typer(help="Guarded official Pupu checkout commands.")
+ invite_pay_app = typer.Typer(help="Official Pupu invite-pay read commands.")
+ app.add_typer(product_app, name="product")
+ app.add_typer(account_app, name="account")
++app.add_typer(address_app, name="address")
+ app.add_typer(catalog_app, name="catalog")
+ app.add_typer(recipe_app, name="recipe")
+ app.add_typer(cart_app, name="cart")
+@@ -273,6 +275,83 @@ def _household_executor(
+     )
+     return executor, auth
+ 
++
++def _login_account_executor(
++    *,
++    account_id: str,
++    accounts_root: Path,
++    data_root: Path,
++    allowed_risks: set[str] | None = None,
++    context_overrides: Mapping[str, object] | None = None,
++):
++    from pupu_assistant.integrations.pupu.account_gateway import HouseholdOperationExecutor
++    from pupu_assistant.integrations.pupu.login_accounts import login_account_paths
++    from pupu_assistant.integrations.pupu.network_executor import PupuNetworkExecutor
++
++    paths = login_account_paths(account_id=account_id, root=accounts_root)
++    if not paths.auth_path.exists():
++        raise ValueError("verified Pupu login is required")
++    auth = json.loads(paths.auth_path.read_text(encoding="utf-8-sig"))
++    if not isinstance(auth, dict):
++        raise ValueError("saved Pupu auth is invalid")
++    network_config = deepcopy(auth)
++    if context_overrides:
++        context = dict(network_config.get("context") or {})
++        context.update(context_overrides)
++        network_config["context"] = context
++    network = PupuNetworkExecutor(config=network_config, repo_root=_repo_root())
++    return (
++        HouseholdOperationExecutor(
++            household_id=account_id,
++            data_root=data_root,
++            send=network,
++            allowed_risks=allowed_risks or {"read_only", "account_session"},
++        ),
++        paths,
++        auth,
++    )
++
++
++async def _list_login_account_addresses(
++    *,
++    account_id: str,
++    accounts_root: Path,
++    data_root: Path,
++    lng_x: str,
++    lat_y: str,
++) -> dict[str, object]:
++    from pupu_assistant.integrations.pupu.account_service import PupuAccountService
++    from pupu_assistant.integrations.pupu.address_command import (
++        access_token_expired,
++        summarize_receiver_addresses,
++    )
++    from pupu_assistant.integrations.pupu.operations import build_operation_request
++
++    executor, paths, auth = _login_account_executor(
++        account_id=account_id,
++        accounts_root=accounts_root,
++        data_root=data_root,
++    )
++    if access_token_expired(auth):
++        await PupuAccountService(
++            executor,
++            auth_path=paths.auth_path,
++            config=auth,
++        ).refresh()
++        executor, _, _ = _login_account_executor(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=data_root,
++        )
++    response = await executor(
++        build_operation_request(
++            "receiver-list",
++            {"receiver": {"lng_x": lng_x, "lat_y": lat_y}},
++        )
++    )
++    return summarize_receiver_addresses(response)
++
++
+ def _catalog_service(
+     *,
+     household_id: str,
+@@ -662,6 +741,156 @@ def catalog_search(
+     )
+ 
+ 
++@catalog_app.command("scoped-search")
++def catalog_scoped_search(
++    query: str = typer.Option(..., "--query"),
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    page: int = typer.Option(1, "--page", min=1),
++    size: int = typer.Option(20, "--size", min=1, max=50),
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Search live products for a trusted login-account address binding."""
++    del json_output
++    root = data_root or _data_root_default()
++
++    async def execute():
++        from pupu_assistant.integrations.pupu.account_service import PupuAccountService
++        from pupu_assistant.integrations.pupu.address_command import access_token_expired
++        from pupu_assistant.integrations.pupu.catalog_service import PupuCatalogService
++
++        executor, paths, auth = _login_account_executor(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=root,
++        )
++        if access_token_expired(auth):
++            await PupuAccountService(
++                executor,
++                auth_path=paths.auth_path,
++                config=auth,
++            ).refresh()
++            executor, _, _ = _login_account_executor(
++                account_id=account_id,
++                accounts_root=accounts_root,
++                data_root=root,
++            )
++        return await PupuCatalogService(
++            executor,
++            store_id=store_id,
++        ).search(query, page=page, size=size)
++
++    _run_agent_command(
++        operation="pupu.catalog.search",
++        request_id=request_id,
++        household_id=account_id,
++        action=execute,
++        next_actions=("pupu.catalog.detail",),
++    )
++
++
++@catalog_app.command("scoped-meal-search")
++def catalog_scoped_meal_search(
++    query: list[str] = typer.Option(..., "--query"),
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    size: int = typer.Option(3, "--size", min=1, max=10),
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Sequentially search three meal ingredient groups in one provider process."""
++    del json_output
++    root = data_root or _data_root_default()
++    if len(query) != 3 or any(not item.strip() for item in query):
++        raise ValueError("exactly three non-empty meal queries are required")
++
++    async def execute():
++        from pupu_assistant.integrations.pupu.catalog_service import PupuCatalogService
++
++        executor, _, _ = await _fresh_login_account_executor(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=root,
++            allowed_risks={"read_only"},
++            context_overrides={"store_id": store_id},
++        )
++        service = PupuCatalogService(executor, store_id=store_id)
++        result = await service.search(query[0], page=1, size=max(size * 3, 9))
++        return {
++            "items": [sku.model_dump(mode="json") for sku in result.items],
++            "queries": list(query),
++            "provider_query": query[0],
++        }
++
++    _run_agent_command(
++        operation="pupu.catalog.meal_search",
++        request_id=request_id,
++        household_id=account_id,
++        action=execute,
++        next_actions=("pupu.catalog.detail",),
++    )
++
++
++@catalog_app.command("scoped-detail")
++def catalog_scoped_detail(
++    store_product_id: str = typer.Option(..., "--store-product-id"),
++    product_id: str = typer.Option(..., "--product-id"),
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Read a live product for a trusted login-account address binding."""
++    del json_output, store_id, place_id, receiver_id
++    root = data_root or _data_root_default()
++
++    async def execute():
++        from pupu_assistant.integrations.pupu.account_service import PupuAccountService
++        from pupu_assistant.integrations.pupu.address_command import access_token_expired
++        from pupu_assistant.integrations.pupu.catalog_service import PupuCatalogService
++
++        executor, paths, auth = _login_account_executor(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=root,
++        )
++        if access_token_expired(auth):
++            await PupuAccountService(
++                executor,
++                auth_path=paths.auth_path,
++                config=auth,
++            ).refresh()
++            executor, _, _ = _login_account_executor(
++                account_id=account_id,
++                accounts_root=accounts_root,
++                data_root=root,
++            )
++        return await PupuCatalogService(
++            executor,
++            store_id=store_id,
++        ).detail(store_product_id, product_id=product_id)
++
++    _run_agent_command(
++        operation="pupu.catalog.detail",
++        request_id=request_id,
++        household_id=account_id,
++        action=execute,
++    )
++
++
+ @catalog_app.command("detail")
+ def catalog_detail(
+     store_product_id: str = typer.Option(..., "--store-product-id"),
+@@ -685,6 +914,31 @@ def catalog_detail(
+     )
+ 
+ 
++@address_app.command("list")
++def address_list(
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    request_id: str | None = typer.Option(None, "--request-id"),
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """List redacted saved addresses for one verified login account."""
++    del json_output
++    root = data_root or _data_root_default()
++    _run_agent_command(
++        operation="pupu.address.list",
++        request_id=request_id or str(uuid4()),
++        household_id=account_id,
++        action=lambda: _list_login_account_addresses(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=root,
++            lng_x=os.environ.get("PUPU_DEFAULT_LNG_X", "119.2965"),
++            lat_y=os.environ.get("PUPU_DEFAULT_LAT_Y", "26.0745"),
++        ),
++    )
++
++
+ @approval_app.command("issue")
+ def approval_issue(
+     payload: Annotated[Path, typer.Option("--payload")],
+@@ -733,6 +987,218 @@ def approval_issue(
+         action=issue,
+     )
+ 
++
++async def _fresh_login_account_executor(
++    *,
++    account_id: str,
++    accounts_root: Path,
++    data_root: Path,
++    allowed_risks: set[str],
++    context_overrides: Mapping[str, object] | None = None,
++):
++    from pupu_assistant.integrations.pupu.account_service import PupuAccountService
++    from pupu_assistant.integrations.pupu.address_command import access_token_expired
++
++    executor, paths, auth = _login_account_executor(
++        account_id=account_id,
++        accounts_root=accounts_root,
++        data_root=data_root,
++        allowed_risks=allowed_risks,
++        context_overrides=context_overrides,
++    )
++    if access_token_expired(auth):
++        await PupuAccountService(executor, auth_path=paths.auth_path, config=auth).refresh()
++        executor, paths, auth = _login_account_executor(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=data_root,
++            allowed_risks=allowed_risks,
++            context_overrides=context_overrides,
++        )
++    return executor, paths, auth
++
++
++def _validate_selected_binding(target, *, receiver_id: str, store_id: str, place_id: str):
++    if (
++        target.receiver_id != receiver_id
++        or target.store_id != store_id
++        or target.place_id != place_id
++    ):
++        raise ValueError("selected Pupu address binding changed")
++    return target
++
++
++@cart_app.command("scoped-read")
++def cart_scoped_read(
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Read the current cart for a trusted login/address binding."""
++    del json_output, receiver_id
++    root = data_root or _data_root_default()
++
++    async def execute():
++        from pupu_assistant.integrations.pupu.cart_service import PupuCartService
++
++        executor, _, _ = await _fresh_login_account_executor(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=root,
++            allowed_risks={"read_only"},
++            context_overrides={"store_id": store_id, "place_id": place_id},
++        )
++        return await PupuCartService(executor).read()
++
++    _run_agent_command(
++        operation="pupu.cart.read",
++        request_id=request_id,
++        household_id=account_id,
++        action=execute,
++    )
++
++
++@cart_app.command("scoped-add")
++def cart_scoped_add(
++    item: Annotated[Path, typer.Option("--item")],
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    actor_id: str = typer.Option(..., "--actor-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Perform one explicitly confirmed cart add for a trusted login/address binding."""
++    del json_output, receiver_id
++    root = data_root or _data_root_default()
++
++    async def execute():
++        from pupu_assistant.application.approval_capability import (
++            ApprovalScope,
++            approval_request_hash,
++        )
++        from pupu_assistant.integrations.pupu.cart_service import CartAddItem, PupuCartService
++
++        raw = _read_json_value(item)
++        if not isinstance(raw, dict):
++            raise ValueError("item JSON must be an object")
++        requested = CartAddItem.model_validate(raw)
++        executor, _, _ = await _fresh_login_account_executor(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=root,
++            allowed_risks={"read_only", "cart_write"},
++            context_overrides={"store_id": store_id, "place_id": place_id},
++        )
++        approvals = _approval_store(household_id=account_id, data_root=root)
++        issued = approvals.issue(
++            household_id=account_id,
++            actor_id=actor_id,
++            scope=ApprovalScope.CART_WRITE,
++            request_hash=approval_request_hash("pupu.cart.add", requested.model_dump(mode="json")),
++            now=datetime.now(UTC),
++            ttl=timedelta(seconds=90),
++        )
++        return await PupuCartService(
++            executor,
++            approvals=approvals,
++            household_id=account_id,
++            actor_id=actor_id,
++        ).add_and_verify(requested, approval_token=issued.token)
++
++    _run_agent_command(
++        operation="pupu.cart.add",
++        request_id=request_id,
++        household_id=account_id,
++        action=execute,
++        next_actions=("pupu.cart.read",),
++    )
++
++
++@cart_app.command("scoped-remove")
++def cart_scoped_remove(
++    item: Annotated[Path, typer.Option("--item")],
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    actor_id: str = typer.Option(..., "--actor-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Remove one explicitly confirmed cart item for a trusted address binding."""
++    del json_output
++    root = data_root or _data_root_default()
++
++    async def execute():
++        from pupu_assistant.application.approval_capability import (
++            ApprovalScope,
++            approval_request_hash,
++        )
++        from pupu_assistant.integrations.pupu.cart_service import CartRemoveItem, PupuCartService
++        from pupu_assistant.integrations.pupu.operations import build_operation_request
++        from pupu_assistant.integrations.pupu.settlement_service import select_receiver_target
++
++        raw = _read_json_value(item)
++        if not isinstance(raw, dict):
++            raise ValueError("item JSON must be an object")
++        requested = CartRemoveItem.model_validate(raw)
++        executor, _, _ = await _fresh_login_account_executor(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=root,
++            allowed_risks={"read_only", "cart_write"},
++            context_overrides={"store_id": store_id, "place_id": place_id},
++        )
++        receivers = await executor(
++            build_operation_request(
++                "receiver-list",
++                {"receiver": {"lng_x": "119.30", "lat_y": "26.08"}},
++            )
++        )
++        _validate_selected_binding(
++            select_receiver_target(receivers, receiver_id=receiver_id),
++            receiver_id=receiver_id,
++            store_id=store_id,
++            place_id=place_id,
++        )
++        approvals = _approval_store(household_id=account_id, data_root=root)
++        issued = approvals.issue(
++            household_id=account_id,
++            actor_id=actor_id,
++            scope=ApprovalScope.CART_WRITE,
++            request_hash=approval_request_hash(
++                "pupu.cart.remove", requested.model_dump(mode="json")
++            ),
++            now=datetime.now(UTC),
++            ttl=timedelta(seconds=90),
++        )
++        return await PupuCartService(
++            executor,
++            approvals=approvals,
++            household_id=account_id,
++            actor_id=actor_id,
++        ).remove_and_verify(requested, approval_token=issued.token)
++
++    _run_agent_command(
++        operation="pupu.cart.remove",
++        request_id=request_id,
++        household_id=account_id,
++        action=execute,
++        next_actions=("pupu.cart.read",),
++    )
++
++
+ @cart_app.command("read")
+ def cart_read_live(
+     household_id: str = typer.Option(..., "--household-id"),
+@@ -891,6 +1357,213 @@ def coupon_claim_live(
+     )
+ 
+ 
++async def _create_scoped_checkout_preview(
++    *,
++    account_id: str,
++    accounts_root: Path,
++    request_id: str,
++    data_root: Path,
++    receiver_id: str,
++    store_id: str,
++    place_id: str,
++):
++    from pupu_assistant.integrations.pupu.operations import build_operation_request
++    from pupu_assistant.integrations.pupu.settlement_service import (
++        PupuSettlementService,
++        select_receiver_target,
++    )
++
++    executor, _, auth = await _fresh_login_account_executor(
++        account_id=account_id,
++        accounts_root=accounts_root,
++        data_root=data_root,
++        allowed_risks={"read_only"},
++    )
++    receivers = await executor(
++        build_operation_request(
++            "receiver-list",
++            {"receiver": {"lng_x": "119.30", "lat_y": "26.08"}},
++        )
++    )
++    target = _validate_selected_binding(
++        select_receiver_target(receivers, receiver_id=receiver_id),
++        receiver_id=receiver_id,
++        store_id=store_id,
++        place_id=place_id,
++    )
++    executor, _, auth = await _fresh_login_account_executor(
++        account_id=account_id,
++        accounts_root=accounts_root,
++        data_root=data_root,
++        allowed_risks={"read_only"},
++        context_overrides={"store_id": store_id, "place_id": place_id},
++    )
++    service = PupuSettlementService(
++        executor,
++        store_id=store_id,
++        place_id=place_id,
++        receiver_id=receiver_id,
++        device_id=_account_context_value(auth, "device_id"),
++        buyer_id=_account_context_value(auth, "user_id"),
++        place_zip=target.place_zip,
++        now_ms=lambda: int(time.time() * 1000),
++    )
++    preview = await service.create_preview(preview_id=request_id)
++    _settlement_preview_store(household_id=account_id, data_root=data_root).put(preview)
++    return {**preview.summary(), "approval_binding": _preview_approval_binding(preview)}
++
++
++async def _create_scoped_checkout_from_preview(
++    *,
++    account_id: str,
++    accounts_root: Path,
++    actor_id: str,
++    request_id: str,
++    preview_id: str,
++    data_root: Path,
++    receiver_id: str,
++    store_id: str,
++    place_id: str,
++):
++    from pupu_assistant.application.approval_capability import ApprovalScope, approval_request_hash
++    from pupu_assistant.integrations.pupu.checkout_service import (
++        CheckoutLedger,
++        PupuCheckoutService,
++    )
++    from pupu_assistant.integrations.pupu.household_runtime import household_paths
++    from pupu_assistant.integrations.pupu.settlement_service import (
++        PupuSettlementService,
++        SettlementMaterialChange,
++        verify_preview_unchanged,
++    )
++
++    if request_id != preview_id:
++        raise ValueError("create request_id must match preview_id")
++    store = _settlement_preview_store(household_id=account_id, data_root=data_root)
++    approved = store.get(preview_id)
++    if (
++        approved.receiver_id != receiver_id
++        or approved.store_id != store_id
++        or approved.place_id != place_id
++    ):
++        raise SettlementMaterialChange("Pupu delivery binding changed")
++    now = datetime.now(UTC)
++    if now >= approved.expires_at:
++        raise SettlementMaterialChange("Pupu settlement preview expired")
++    executor, _, auth = await _fresh_login_account_executor(
++        account_id=account_id,
++        accounts_root=accounts_root,
++        data_root=data_root,
++        allowed_risks={"read_only", "real_order"},
++        context_overrides={"store_id": store_id, "place_id": place_id},
++    )
++    settlement = PupuSettlementService(
++        executor,
++        store_id=store_id,
++        place_id=place_id,
++        receiver_id=receiver_id,
++        device_id=_account_context_value(auth, "device_id"),
++        buyer_id=_account_context_value(auth, "user_id"),
++        place_zip=int(_account_context_value(auth, "city_zip")),
++        now_ms=lambda: int(time.time() * 1000),
++    )
++    fresh = verify_preview_unchanged(
++        approved,
++        await settlement.create_preview(preview_id=preview_id),
++    )
++    store.put(fresh)
++    approvals = _approval_store(household_id=account_id, data_root=data_root)
++    binding = _preview_approval_binding(approved)
++    issued = approvals.issue(
++        household_id=account_id,
++        actor_id=actor_id,
++        scope=ApprovalScope.REAL_ORDER,
++        request_hash=approval_request_hash("pupu.checkout.create_invite_pay", binding),
++        now=now,
++        ttl=timedelta(seconds=90),
++    )
++    account_dir = household_paths(account_id, data_root=data_root).account_dir
++    checkout = PupuCheckoutService(
++        executor=executor,
++        approvals=approvals,
++        ledger=CheckoutLedger(account_dir / "checkout-runs.json"),
++        household_id=account_id,
++        actor_id=actor_id,
++    )
++    return await checkout.create_invite_pay_checkout(
++        request_id=request_id,
++        order_body=fresh.order_body,
++        approval_token=issued.token,
++        approval_binding=binding,
++    )
++
++
++@checkout_app.command("scoped-preview")
++def checkout_scoped_preview(
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Build a real settlement preview for the selected login-account address."""
++    del json_output
++    root = data_root or _data_root_default()
++    _run_agent_command(
++        operation="pupu.checkout.preview",
++        request_id=request_id,
++        household_id=account_id,
++        action=lambda: _create_scoped_checkout_preview(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            request_id=request_id,
++            data_root=root,
++            receiver_id=receiver_id,
++            store_id=store_id,
++            place_id=place_id,
++        ),
++        next_actions=("pupu.checkout.create_invite_pay",),
++    )
++
++
++@checkout_app.command("scoped-create-from-preview")
++def checkout_scoped_create_from_preview(
++    preview_id: str = typer.Option(..., "--preview-id"),
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    actor_id: str = typer.Option(..., "--actor-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Create one confirmed real pending-payment order and invite-pay destination."""
++    del json_output
++    root = data_root or _data_root_default()
++    _run_agent_command(
++        operation="pupu.checkout.create_invite_pay",
++        request_id=request_id,
++        household_id=account_id,
++        action=lambda: _create_scoped_checkout_from_preview(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            actor_id=actor_id,
++            request_id=request_id,
++            preview_id=preview_id,
++            data_root=root,
++            receiver_id=receiver_id,
++            store_id=store_id,
++            place_id=place_id,
++        ),
++        next_actions=("pupu.invite_pay.detail",),
++    )
++
++
+ @checkout_app.command("create-invite-pay")
+ def checkout_create_invite_pay(
+     order_body: Annotated[Path, typer.Option("--order-body")],
+@@ -2230,9 +2903,7 @@ def coupon_optimize(
+     )
+ 
+     filler_skus = [
+-        normalize_sku(item)
+-        for item in _read_json_list(fillers)
+-        if isinstance(item, dict)
++        normalize_sku(item) for item in _read_json_list(fillers) if isinstance(item, dict)
+     ]
+     plan = optimize_filler_discount(
+         subtotal_cents=subtotal_cents,
+@@ -2259,9 +2930,7 @@ def gift_choose(
+     )
+ 
+     candidate_skus = [
+-        normalize_sku(item)
+-        for item in _read_json_list(candidates)
+-        if isinstance(item, dict)
++        normalize_sku(item) for item in _read_json_list(candidates) if isinstance(item, dict)
+     ]
+     existing_intents: list[CartPreviewIntent] = []
+     if existing is not None:
+diff --git a/src/pupu_assistant/integrations/pupu/address_command.py b/src/pupu_assistant/integrations/pupu/address_command.py
+index e69de29..53fcf67 100644
+--- a/src/pupu_assistant/integrations/pupu/address_command.py
++++ b/src/pupu_assistant/integrations/pupu/address_command.py
+@@ -0,0 +1,79 @@
++from __future__ import annotations
++
++import base64
++import json
++import time
++from collections.abc import Mapping
++from typing import Any
++
++
++def _mapping(value: Any) -> Mapping[str, Any]:
++    return value if isinstance(value, Mapping) else {}
++
++
++def access_token_expired(
++    config: Mapping[str, Any],
++    *,
++    now_seconds: int | None = None,
++    skew_seconds: int = 30,
++) -> bool:
++    authorization = _text(_mapping(config.get("headers")).get("authorization"))
++    token = authorization.split()[-1] if authorization else ""
++    parts = token.split(".")
++    if len(parts) != 3:
++        return True
++    try:
++        raw = parts[1] + "=" * (-len(parts[1]) % 4)
++        claims = json.loads(base64.urlsafe_b64decode(raw))
++        expires_at = int(claims["exp"])
++    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
++        return True
++    active_now = int(time.time()) if now_seconds is None else now_seconds
++    return expires_at <= active_now + skew_seconds
++
++
++def _text(value: Any) -> str:
++    return str(value).strip() if value not in (None, "") else ""
++
++
++def _candidates(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
++    data = _mapping(payload.get("data")) or payload
++    result: list[Mapping[str, Any]] = []
++    for key in ("recommend_receiver_list", "normal_receiver_list"):
++        values = data.get(key)
++        if isinstance(values, list):
++            result.extend(value for value in values if isinstance(value, Mapping))
++    return result
++
++
++def summarize_receiver_addresses(payload: Mapping[str, Any]) -> dict[str, object]:
++    addresses: list[dict[str, object]] = []
++    seen: set[str] = set()
++    for receiver in _candidates(payload):
++        receiver_id = _text(receiver.get("id"))
++        place = _mapping(receiver.get("place"))
++        store_id = _text(receiver.get("service_store_id") or place.get("service_store_id"))
++        place_id = _text(place.get("id"))
++        try:
++            place_zip = int(place.get("zip"))
++        except (TypeError, ValueError):
++            continue
++        if not receiver_id or not store_id or not place_id or place_zip <= 0:
++            continue
++        if receiver_id in seen:
++            continue
++        seen.add(receiver_id)
++        city = _text(receiver.get("city_name"))
++        area = _text(receiver.get("area_name"))
++        addresses.append(
++            {
++                "id": receiver_id,
++                "label": f"地址 {len(addresses) + 1}",
++                "region": f"{city}{area}" or "已保存区域",
++                "detailHint": _text(receiver.get("building_room_num")) or "详细地址已保护",
++                "phoneSuffix": "",
++                "service_store_id": store_id,
++                "place": {"id": place_id, "zip": place_zip},
++            }
++        )
++    return {"addresses": addresses}
+diff --git a/tests/test_address_command.py b/tests/test_address_command.py
+index e69de29..15e8604 100644
+--- a/tests/test_address_command.py
++++ b/tests/test_address_command.py
+@@ -0,0 +1,101 @@
++from pupu_assistant.integrations.pupu.address_command import (
++    access_token_expired,
++    summarize_receiver_addresses,
++)
++
++
++def test_summarizes_receiver_list_without_sensitive_fields():
++    payload = {
++        "data": {
++            "recommend_receiver_list": [
++                {
++                    "id": "receiver-a",
++                    "name": "家",
++                    "city_name": "福州市",
++                    "area_name": "鼓楼区",
++                    "address": "测试路 88 号",
++                    "building_room_num": "3 栋 1201",
++                    "mobile": "13000009501",
++                    "service_store_id": "store-a",
++                    "place": {"id": "place-a", "zip": 350100},
++                    "lng_x": "encrypted-longitude",
++                    "lat_y": "encrypted-latitude",
++                }
++            ],
++            "normal_receiver_list": [],
++        }
++    }
++
++    result = summarize_receiver_addresses(payload)
++
++    assert result == {
++        "addresses": [
++            {
++                "id": "receiver-a",
++                "label": "地址 1",
++                "region": "福州市鼓楼区",
++                "detailHint": "3 栋 1201",
++                "phoneSuffix": "",
++                "service_store_id": "store-a",
++                "place": {"id": "place-a", "zip": 350100},
++            }
++        ]
++    }
++    serialized = repr(result)
++    assert "测试路" not in serialized
++    assert "13000009501" not in serialized
++    assert "encrypted-" not in serialized
++
++
++def test_deduplicates_recommended_and_normal_receivers():
++    receiver = {
++        "id": "receiver-a",
++        "service_store_id": "store-a",
++        "place": {"id": "place-a", "zip": 350100},
++    }
++    result = summarize_receiver_addresses(
++        {
++            "data": {
++                "recommend_receiver_list": [receiver],
++                "normal_receiver_list": [receiver],
++            }
++        }
++    )
++    assert len(result["addresses"]) == 1
++
++
++def test_rejects_incomplete_receiver_bindings():
++    result = summarize_receiver_addresses(
++        {
++            "data": {
++                "normal_receiver_list": [{"id": "receiver-a"}],
++            }
++        }
++    )
++    assert result == {"addresses": []}
++
++
++def test_detects_expired_access_token_without_exposing_it():
++    import base64
++    import json
++
++    def jwt(exp):
++        body = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
++        return f"header.{body}.signature"
++
++    assert access_token_expired(
++        {
++            "headers": {
++                "authorization": f"Bearer {jwt(100)}",
++            }
++        },
++        now_seconds=101,
++    )
++    assert not access_token_expired(
++        {
++            "headers": {
++                "authorization": f"Bearer {jwt(200)}",
++            }
++        },
++        now_seconds=101,
++    )
+diff --git a/tests/test_scoped_cart_commands.py b/tests/test_scoped_cart_commands.py
+new file mode 100644
+index 0000000..96a9d55
+--- /dev/null
++++ b/tests/test_scoped_cart_commands.py
+@@ -0,0 +1,21 @@
++from typer.testing import CliRunner
++
++from pupu_assistant.entrypoints.cli.main import app
++
++
++def test_scoped_remove_requires_full_account_and_address_binding():
++    result = CliRunner().invoke(app, ["cart", "scoped-remove", "--help"])
++
++    assert result.exit_code == 0
++    for option in (
++        "--item",
++        "--account-id",
++        "--accounts-root",
++        "--store-id",
++        "--place-id",
++        "--receiver-id",
++        "--actor-id",
++        "--request-id",
++        "--data-root",
++    ):
++        assert option in result.stdout

@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+test.skip(process.env.PUPU_LIVE !== "1", "real Pupu acceptance requires an explicit live gate");
+
+test.setTimeout(600_000);
+
 test("real Hermes run returns a live Pupu presentation and reaches ready", async ({
   page,
 }) => {
@@ -7,6 +11,7 @@ test("real Hermes run returns a live Pupu presentation and reaches ready", async
     (response) =>
       response.url().endsWith("/api/chat") &&
       response.request().method() === "POST",
+    { timeout: 600_000 },
   );
 
   await page.goto("/");
@@ -17,6 +22,44 @@ test("real Hermes run returns a live Pupu presentation and reaches ready", async
     );
   await page.getByRole("button", { name: "发送指令" }).click();
 
+  const loginForm = page.getByRole("form", { name: "朴朴登录" });
+  const needsLogin = await Promise.race([
+    loginForm
+      .waitFor({ state: "visible", timeout: 15_000 })
+      .then(() => true)
+      .catch(() => false),
+    chatResponse.then(() => false),
+  ]);
+
+  if (needsLogin) {
+    const phone = process.env.PUPU_LIVE_PHONE;
+    if (!phone) {
+      throw new Error("PUPU_LIVE_PHONE is required for a fresh live login");
+    }
+    await page.getByLabel("手机号").fill(phone);
+    await page.getByRole("button", { name: /继续验证/ }).click();
+
+    const captcha = page.getByTitle("朴朴安全验证");
+    const smsForm = page.getByRole("form", { name: "短信验证" });
+    await expect(captcha.or(smsForm)).toBeVisible({ timeout: 60_000 });
+    if (await captcha.isVisible()) {
+      if (process.env.PUPU_LIVE_MANUAL !== "1") {
+        throw new Error("fresh captcha requires PUPU_LIVE_MANUAL=1 and an operator");
+      }
+      await expect(smsForm).toBeVisible({ timeout: 300_000 });
+    }
+
+    const otp = process.env.PUPU_LIVE_OTP;
+    if (otp) {
+      await page.getByLabel("短信验证码").fill(otp);
+      await page.getByRole("button", { name: "验证并继续" }).click();
+    } else if (process.env.PUPU_LIVE_MANUAL === "1") {
+      await expect(page.locator('[data-component="pupu.login"]')).toHaveCount(0, {
+        timeout: 300_000,
+      });
+    } else {
+      throw new Error("PUPU_LIVE_OTP or manual operator input is required");
+    }
   expect((await chatResponse).status()).toBe(200);
 
   const card = page.locator('[data-component="pupu.purchase-plan"]');

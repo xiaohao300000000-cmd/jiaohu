@@ -14,12 +14,14 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from .schemas import CliEnvelope
+from .scope_ticket import ScopeTicketError, TrustedPupuScope, consume_scope_ticket
 
 MAX_OUTPUT_BYTES = 1_000_000
 READ_ONLY_OPERATIONS = {
     "capabilities",
     "login.status",
     "catalog.search",
+    "catalog.meal-search",
     "catalog.detail",
     "cart.read",
 }
@@ -38,6 +40,9 @@ SAFE_RESULT_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SAFE_IDENTITY_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$")
 
 
+class ProviderConfigurationError(ValueError):
+    pass
+
 class CompletedProcess(Protocol):
     stdout: str
     stderr: str
@@ -52,6 +57,21 @@ class ProcessRunner(Protocol):
         timeout: int,
         max_output_bytes: int,
     ) -> CompletedProcess: ...
+
+
+def provider_timeout_seconds(env: dict[str, str] | os._Environ[str] = os.environ) -> int:
+    raw = env.get("PUPU_TOOL_TIMEOUT_SECONDS", "150")
+    try:
+        timeout = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ProviderConfigurationError(
+            "PUPU_TOOL_TIMEOUT_SECONDS must be an integer from 10 to 180"
+        ) from exc
+    if not 10 <= timeout <= 180:
+        raise ProviderConfigurationError(
+            "PUPU_TOOL_TIMEOUT_SECONDS must be an integer from 10 to 180"
+        )
+    return timeout
 
 
 def error_json(code: str, message: str, *, retryable: bool = False) -> str:
@@ -90,12 +110,18 @@ def _append_shared_scope(argv: list[str], arguments: dict[str, object]) -> None:
         raise ValueError("request_id must be a non-empty string")
     argv.extend(["--request-id", request_id or str(uuid4())])
 
-    household_id = arguments.get("household_id") or os.environ.get("PUPU_HOUSEHOLD_ID")
-    data_dir = arguments.get("data_root") or os.environ.get("PUPU_DATA_DIR")
-    if not isinstance(household_id, str) or not household_id:
-        raise ValueError("PUPU_HOUSEHOLD_ID is required")
-    if not isinstance(data_dir, str) or not data_dir:
-        raise ValueError("PUPU_DATA_DIR is required")
+    trusted_scope = arguments.get("_trusted_scope")
+    if isinstance(trusted_scope, TrustedPupuScope):
+        argv.extend([
+            "--account-id", trusted_scope.account_id,
+            "--accounts-root", str(trusted_scope.accounts_root),
+            "--data-root", str(trusted_scope.data_root),
+        ])
+        return
+    household_id = os.environ.get("PUPU_HOUSEHOLD_ID")
+    data_dir = os.environ.get("PUPU_DATA_DIR")
+    if not household_id or not data_dir:
+        raise ValueError("trusted Pupu scope is required")
     argv.extend(["--household-id", household_id, "--data-root", data_dir])
 
 
@@ -114,13 +140,53 @@ def build_argv(operation: str, arguments: dict[str, object]) -> list[str]:
 
     command, action = operation.split(".", 1)
     argv = [cli_path, command, action]
-    if operation == "catalog.search":
+    if operation == "catalog.meal-search":
+        trusted_scope = arguments.get("_trusted_scope")
+        if not isinstance(trusted_scope, TrustedPupuScope):
+            raise ValueError("trusted Pupu scope is required")
+        queries = arguments.get("queries")
+        if (
+            not isinstance(queries, list) or len(queries) != 3
+            or any(not isinstance(item, str) or not item.strip() for item in queries)
+        ):
+            raise ValueError("queries must contain exactly three non-empty strings")
+        argv[1:3] = ["catalog", "scoped-meal-search"]
+        for query in queries:
+            argv.extend(["--query", query])
+        argv.extend([
+            "--size", "3",
+            "--store-id", trusted_scope.store_id,
+            "--place-id", trusted_scope.place_id,
+            "--receiver-id", trusted_scope.receiver_id,
+        ])
+    elif operation == "catalog.search":
+        trusted_scope = arguments.get("_trusted_scope")
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv[1:3] = ["catalog", "scoped-search"]
         argv.extend(["--query", _required_text(arguments, "query")])
         size = arguments.get("size", 5)
         if not isinstance(size, int) or isinstance(size, bool) or not 1 <= size <= 50:
             raise ValueError("size must be an integer from 1 to 50")
         argv.extend(["--size", str(size)])
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv.extend([
+                "--store-id", trusted_scope.store_id,
+                "--place-id", trusted_scope.place_id,
+                "--receiver-id", trusted_scope.receiver_id,
+            ])
+    elif operation == "cart.read":
+        trusted_scope = arguments.get("_trusted_scope")
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv[1:3] = ["cart", "scoped-read"]
+            argv.extend([
+                "--store-id", trusted_scope.store_id,
+                "--place-id", trusted_scope.place_id,
+                "--receiver-id", trusted_scope.receiver_id,
+            ])
     elif operation == "catalog.detail":
+        trusted_scope = arguments.get("_trusted_scope")
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv[1:3] = ["catalog", "scoped-detail"]
         argv.extend(
             [
                 "--store-product-id",
@@ -129,6 +195,13 @@ def build_argv(operation: str, arguments: dict[str, object]) -> list[str]:
                 _required_text(arguments, "product_id"),
             ]
         )
+        trusted_scope = arguments.get("_trusted_scope")
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv.extend([
+                "--store-id", trusted_scope.store_id,
+                "--place-id", trusted_scope.place_id,
+                "--receiver-id", trusted_scope.receiver_id,
+            ])
 
     _append_shared_scope(argv, arguments)
     return [*argv, "--json"]
@@ -273,8 +346,26 @@ def run_pupu(
             "operation_not_allowed", "Only read-only Pupu operations are enabled"
         )
     try:
-        argv = build_argv(operation, arguments)
-        completed = runner(argv, timeout=30, max_output_bytes=MAX_OUTPUT_BYTES)
+        scoped_arguments = dict(arguments)
+        if operation != "capabilities":
+            task_id = scoped_arguments.pop("_trusted_task_id", None)
+            if not isinstance(task_id, str) or not task_id:
+                raise ScopeTicketError("scope ticket task identity is missing")
+            ticket_root = Path(
+                os.environ.get(
+                    "PUPU_SCOPE_TICKET_DIR",
+                    "/home/pupu/.local/state/jiaohu/pupu-login/scope-tickets",
+                )
+            )
+            scoped_arguments["_trusted_scope"] = consume_scope_ticket(ticket_root, task_id)
+        argv = build_argv(operation, scoped_arguments)
+        completed = runner(
+            argv, timeout=provider_timeout_seconds(), max_output_bytes=MAX_OUTPUT_BYTES
+        )
+    except ScopeTicketError:
+        return error_json("scope_ticket_invalid", "Pupu account scope is unavailable")
+    except ProviderConfigurationError as exc:
+        return error_json("invalid_configuration", str(exc))
     except ValueError as exc:
         return error_json("invalid_arguments", str(exc))
     except subprocess.TimeoutExpired:

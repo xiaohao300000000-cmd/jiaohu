@@ -10,8 +10,21 @@ import { JOURNEY_SPRINGS } from "./config/motion";
 
 export default function App() {
   const [activeTask, setActiveTask] = useState<TaskPresentation | null>(null);
-  const { snapshot, transportBusy, submit, stop, retry, reset } =
-    useLiveJourney();
+  const {
+    snapshot,
+    transportBusy,
+    submit,
+    submitLoginPhone,
+    submitLoginCode,
+    completeLoginCaptcha,
+    resendLoginCode,
+    cancelLogin,
+    selectAddress,
+    retryAddresses,
+    stop,
+    retry,
+    reset,
+  } = useLiveJourney();
 
   const startTask = (input: string) => {
     const normalized = input.trim();
@@ -37,7 +50,9 @@ export default function App() {
               <span className="app-header__canvas-status">
                 {snapshot.state === "ready"
                   ? "Agent 决策已完成"
-                  : "Hermes 正在处理"}
+                  : snapshot.presentation?.component === "pupu.login"
+                    ? "等待朴朴安全登录"
+                    : "Hermes 正在处理"}
               </span>
               <button
                 className="app-header__return"
@@ -57,7 +72,7 @@ export default function App() {
               >
                 Pupu
               </a>
-              <span className="app-header__status">Hermes 实时只读</span>
+              <span className="app-header__status">Hermes 实时 · 操作需确认</span>
             </>
           )}
         </div>
@@ -87,6 +102,13 @@ export default function App() {
                   <JourneyPresentationRenderer
                     snapshot={snapshot}
                     onRetry={() => void retry()}
+                    onLoginPhone={(phone) => void submitLoginPhone(phone)}
+                    onLoginCode={(code) => void submitLoginCode(code)}
+                    onLoginCaptchaComplete={() => void completeLoginCaptcha()}
+                    onLoginResend={() => void resendLoginCode()}
+                    onLoginCancel={cancelLogin}
+                    onAddressSelect={(id) => void selectAddress(id)}
+                    onAddressRetry={() => void retryAddresses()}
                   />
                 </JourneyOriginSurface>
               </div>
@@ -110,7 +132,7 @@ export default function App() {
 
       {!isCanvas && (
         <footer className="app-footer">
-          <span>Hermes 实时通道 · 朴朴首版只读模式</span>
+          <span>Hermes 实时通道 · 朴朴操作均需确认</span>
         </footer>
       )}
     </div>

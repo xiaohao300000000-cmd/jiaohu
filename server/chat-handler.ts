@@ -27,6 +27,26 @@ interface ChatDependencies {
     identity: ToolArtifactIdentity,
   ) => Promise<ToolArtifactReadResult>;
   createId?: () => string;
+  preparePupuScope?: (request: Request, sessionId: string, input: string) => Promise<void>;
+  cleanupPupuScope?: (sessionId: string) => Promise<void>;
+  registerPupuPlan?: (sessionId: string, runId: string, products: import("../src/components/agent/agent-ui-event").ProductSummary[]) => void;
+}
+
+function isComplexMealRequest(input: string): boolean {
+  return /(?:低脂|三道菜|营养全面|晚餐|做.*菜)/.test(input);
+}
+function hermesInput(input: string): string {
+  if (!isComplexMealRequest(input)) return input;
+  return [
+    input,
+    "",
+    "[LIQUIDJOURNEY_EXECUTION_CONTRACT]",
+    "This is a Pupu meal-shopping request.",
+    "Call pupu_search_meal_catalog exactly once with queries for lean protein, vegetables, and tofu or another core ingredient.",
+    "Do not call pupu_search_catalog, pupu_read_cart, or pupu_auth_status.",
+    "After the tool result, produce exactly three simple low-fat dishes grounded in returned in-stock SKUs, with nutrition coverage and substitutions.",
+    "Never return a prose-only or zero-price plan.",
+  ].join("\n");
 }
 
 function extractInput(body: unknown): string | null {
@@ -104,8 +124,13 @@ export async function handleChatRequest(
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {
+      let scopePrepared = false;
       try {
-        const { runId } = await createRun(input, sessionId, request.signal);
+        if (dependencies.preparePupuScope) {
+          await dependencies.preparePupuScope(request, sessionId, input);
+          scopePrepared = true;
+        }
+        const { runId } = await createRun(hermesInput(input), sessionId, request.signal);
         writer.write({ type: "message-metadata", messageMetadata: { runId } });
         const context = createHermesEventContext(sessionId, input, runId);
         const started = mapHermesEvent(
@@ -141,12 +166,20 @@ export async function handleChatRequest(
             };
           }
           const mapped = mapHermesEvent(event, context);
+          if (event.type === "run.completed" && dependencies.registerPupuPlan && context.products.length > 0) {
+            dependencies.registerPupuPlan(sessionId, runId, context.products);
+          }
           if (!mapped) continue;
           writer.write({ type: "data-journey", data: mapped });
         }
       } catch (error) {
         if (request.signal.aborted) return;
         throw error;
+      }
+      finally {
+        if (scopePrepared && dependencies.cleanupPupuScope) {
+          await dependencies.cleanupPupuScope(sessionId);
+        }
       }
     },
     onError: () => "实时服务暂时不可用，请稍后重试。",

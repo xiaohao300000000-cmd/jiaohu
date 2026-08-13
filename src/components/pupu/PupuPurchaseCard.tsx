@@ -6,10 +6,12 @@ import {
   ShoppingBasket,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { JourneyPresentation } from "../journey/types";
 import { JOURNEY_SPRINGS } from "../../config/motion";
 import "./pupu-purchase.css";
+import { PupuCartConfirmCard } from "./PupuCartConfirmCard";
+import { createPupuCommerceClient } from "../../ai/pupu-commerce-client";
 
 type PupuPresentation = Extract<
   JourneyPresentation,
@@ -22,6 +24,7 @@ interface PupuPurchaseCardProps {
   runId?: string;
   onAddToCart?: () => void;
   readOnly?: boolean;
+  enableCommerce?: boolean;
 }
 
 export function PupuPurchaseCard({
@@ -30,7 +33,9 @@ export function PupuPurchaseCard({
   runId,
   onAddToCart,
   readOnly = false,
+  enableCommerce = false,
 }: PupuPurchaseCardProps) {
+  const commerce = useMemo(() => createPupuCommerceClient(), []);
   const [failedImages, setFailedImages] = useState<Set<string>>(
     () => new Set(),
   );
@@ -181,6 +186,14 @@ export function PupuPurchaseCard({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {enableCommerce && runId && payload.products.length > 0 && (
+        <PupuCartConfirmCard
+          products={payload.products}
+          onPreview={() => commerce.previewCart(runId, payload.products)}
+          onCommit={commerce.commitCart}
+        />
+      )}
 
       {!readOnly && onAddToCart && (
         <footer className="pupu-purchase-card__footer">

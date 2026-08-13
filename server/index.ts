@@ -1,13 +1,42 @@
 import express from "express";
+import { join } from "node:path";
 import { createServer as createViteServer } from "vite";
 import { handleChatRequest } from "./chat-handler";
-import { getHermesConfig } from "./config";
+import { getHermesConfig, getPupuLoginConfig } from "./config";
 import { stopHermesRun } from "./hermes-client";
 import { abortOnClientDisconnect } from "./request-lifecycle";
+import { PupuSessionStore } from "./pupu/session-store";
+import { PupuLoginController } from "./pupu/login-controller";
+import { handlePupuLoginRequest } from "./pupu/login-router";
+import { PupuScopeTicketStore } from "./pupu/scope-ticket";
+import { readPupuSessionCookie } from "./pupu/http-security";
+import { PupuAddressController } from "./pupu/address-controller";
+import { handlePupuAddressRequest } from "./pupu/address-router";
+import { PupuCartController } from "./pupu/cart-controller";
+import { handlePupuCommerceRequest } from "./pupu/commerce-router";
+import { PupuCheckoutController } from "./pupu/checkout-controller";
+import { isPupuRequest } from "./pupu/request-classifier";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
 const port = Number(process.env.APP_PORT || 4173);
+
+const loginConfig = getPupuLoginConfig();
+const sessionStore = new PupuSessionStore({
+  root: join(loginConfig.runtimeRoot, "sessions"),
+  accountsRoot: loginConfig.accountsRoot,
+});
+const loginController = new PupuLoginController({
+  attemptTtlMs: loginConfig.attemptTtlMs,
+  resendCooldownMs: loginConfig.resendCooldownMs,
+});
+const scopeTickets = new PupuScopeTicketStore({
+  root: join(loginConfig.runtimeRoot, "scope-tickets"),
+  ttlMs: 120_000,
+});
+const addressController = new PupuAddressController();
+const cartController = new PupuCartController();
+const checkoutController = new PupuCheckoutController();
 
 function requestHeaders(
   headers: express.Request["headers"],
@@ -62,7 +91,41 @@ app.post(
       },
     );
     try {
-      await sendWebResponse(await handleChatRequest(request), res);
+      await sendWebResponse(
+        await handleChatRequest(request, {
+          preparePupuScope: async (source, sessionId, input) => {
+            if (!isPupuRequest(input)) {
+              return;
+            }
+            const token = readPupuSessionCookie(source.headers.get("cookie"));
+            if (!token) throw new Error("Pupu browser session is required");
+            const session = await sessionStore.resolve(token);
+            if (session.created) throw new Error("Pupu browser session is invalid");
+            const selection = addressController.getSelection(session.accountId);
+            if (!selection) throw new Error("Pupu delivery address selection is required");
+            await scopeTickets.issue({
+              sessionId,
+              accountId: session.accountId,
+              accountsRoot: loginConfig.accountsRoot,
+              dataRoot: loginConfig.dataRoot,
+              receiverId: selection.receiverId,
+              storeId: selection.storeId,
+              placeId: selection.placeId,
+            });
+          },
+          cleanupPupuScope: (sessionId) => scopeTickets.remove(sessionId),
+          registerPupuPlan: async (_sessionId, runId, products) => {
+            const token = readPupuSessionCookie(request.headers.get("cookie"));
+            if (!token) return;
+            const session = await sessionStore.resolve(token);
+            if (session.created) return;
+            const selection = addressController.getSelection(session.accountId);
+            if (!selection) return;
+            cartController.registerPlan(session.accountId, runId, selection, products);
+          },
+        }),
+        res,
+      );
     } catch {
       if (!res.headersSent) {
         res.status(502).json({
@@ -76,6 +139,115 @@ app.post(
       }
     } finally {
       stopWatching();
+    }
+  },
+);
+
+app.use(
+  "/api/pupu/login",
+  express.raw({ type: () => true, limit: "128kb" }),
+  async (req, res) => {
+    const controller = new AbortController();
+    const stopWatching = abortOnClientDisconnect(req, res, controller);
+    const method = req.method.toUpperCase();
+    const request = new Request(
+      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
+      {
+        method,
+        headers: requestHeaders(req.headers),
+        body: method === "GET" || method === "HEAD" ? undefined : req.body,
+        signal: controller.signal,
+      },
+    );
+    try {
+      await sendWebResponse(
+        await handlePupuLoginRequest(request, {
+          sessionStore,
+          controller: loginController,
+          config: loginConfig,
+        }),
+        res,
+      );
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).json({
+          phase: "error",
+          error: {
+            code: "login_unavailable",
+            message: "Pupu login is temporarily unavailable.",
+            retryable: true,
+          },
+        });
+      } else {
+        res.end();
+      }
+    } finally {
+      stopWatching();
+    }
+  },
+);
+
+app.use(
+  "/api/pupu/addresses",
+  express.raw({ type: () => true, limit: "64kb" }),
+  async (req, res) => {
+    const method = req.method.toUpperCase();
+    const request = new Request(
+      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
+      {
+        method,
+        headers: requestHeaders(req.headers),
+        body: method === "GET" || method === "HEAD" ? undefined : req.body,
+      },
+    );
+    try {
+      await sendWebResponse(
+        await handlePupuAddressRequest(request, {
+          sessionStore,
+          controller: addressController,
+          config: loginConfig,
+        }),
+        res,
+      );
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).json({
+          error: {
+            code: "address_unavailable",
+            message: "暂时无法读取已保存地址，请稍后重试。",
+          },
+        });
+      }
+    }
+  },
+);
+
+app.use(
+  "/api/pupu",
+  express.raw({ type: () => true, limit: "128kb" }),
+  async (req, res) => {
+    const method = req.method.toUpperCase();
+    const request = new Request(
+      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
+      {
+        method,
+        headers: requestHeaders(req.headers),
+        body: method === "GET" || method === "HEAD" ? undefined : req.body,
+      },
+    );
+    try {
+      await sendWebResponse(
+        await handlePupuCommerceRequest(request, {
+          sessionStore, addressController, cartController, checkoutController, config: loginConfig,
+        }),
+        res,
+      );
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).json({
+          error: { code: "commerce_unavailable", message: "朴朴交易服务暂时不可用。" },
+        });
+      }
     }
   },
 );

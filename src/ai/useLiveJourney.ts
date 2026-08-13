@@ -10,6 +10,9 @@ import type {
   JourneySnapshot,
 } from "../components/journey/types";
 import type { JourneyUIMessage } from "./journey-ui-message";
+import { isPupuTask } from "../components/home/presentation";
+import { createPupuLoginClient, type PupuLoginResponse } from "./pupu-login-client";
+import { createPupuAddressClient, type SavedPupuAddress } from "./pupu-address-client";
 
 interface UseLiveJourneyOptions {
   fetch?: typeof fetch;
@@ -35,6 +38,16 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
   const [snapshot, reduce] = useReducer(liveReducer, initialJourneySnapshot);
   const activeRequestId = useRef<string | null>(null);
   const activeText = useRef("");
+  const heldTask = useRef<{ text: string; token: string } | null>(null);
+  const selectedAddresses = useRef<SavedPupuAddress[]>([]);
+  const loginClient = useMemo(
+    () => createPupuLoginClient(options.fetch || fetch),
+    [options.fetch],
+  );
+  const addressClient = useMemo(
+    () => createPupuAddressClient(options.fetch || fetch),
+    [options.fetch],
+  );
   const transport = useMemo(
     () =>
       new DefaultChatTransport<JourneyUIMessage>({
@@ -69,7 +82,7 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     },
   });
 
-  const submit = useCallback(
+  const sendToHermes = useCallback(
     async (text: string) => {
       const normalized = text.trim();
       if (!normalized) return;
@@ -95,9 +108,171 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     },
     [chat, dispatch],
   );
+  const showLogin = useCallback(
+    (response: PupuLoginResponse) => {
+      const requestId = activeRequestId.current;
+      if (!requestId) return;
+      dispatch({
+        type: "presentation.updated",
+        requestId,
+        presentation: {
+          capability: "pupu",
+          component: "pupu.login",
+          mode: "canvas",
+          dataSource: "live",
+          payload: response.phase === "auth_required" ? { phase: "phone" } : response,
+        },
+      });
+    },
+    [dispatch],
+  );
+
+  const showAddresses = useCallback((
+    phase: "loading" | "choose" | "selecting" | "selected" | "error",
+    addresses: SavedPupuAddress[] = selectedAddresses.current,
+  ) => {
+    const requestId = activeRequestId.current;
+    if (!requestId) return;
+    dispatch({
+      type: "presentation.updated",
+      requestId,
+      presentation: {
+        capability: "pupu",
+        component: "pupu.address",
+        mode: "canvas",
+        dataSource: "live",
+        payload: { phase, addresses },
+      },
+    });
+  }, [dispatch]);
+
+  const loadAddresses = useCallback(async () => {
+    if (!heldTask.current) return;
+    showAddresses("loading", []);
+    try {
+      const result = await addressClient.list();
+      selectedAddresses.current = result.addresses;
+      showAddresses("choose", result.addresses);
+    } catch {
+      showAddresses("error", []);
+    }
+  }, [addressClient, showAddresses]);
+
+  const resumeHeldTask = useCallback(async () => {
+    const held = heldTask.current;
+    if (!held) return;
+    heldTask.current = null;
+    await sendToHermes(held.text);
+  }, [sendToHermes]);
+
+  const submit = useCallback(async (text: string) => {
+    const normalized = text.trim();
+    if (!normalized) return;
+    if (!isPupuTask(normalized)) {
+      await sendToHermes(normalized);
+      return;
+    }
+    const requestId = nextRequestId();
+    activeRequestId.current = requestId;
+    activeText.current = normalized;
+    heldTask.current = { text: normalized, token: crypto.randomUUID() };
+    dispatch({ type: "request.sent", requestId, text: normalized });
+    try {
+      const status = await loginClient.status();
+      if (status.phase === "connected") await loadAddresses();
+      else showLogin(status);
+    } catch {
+      dispatch({
+        type: "stream.failed",
+        requestId,
+        error: {
+          kind: "provider",
+          message: "朴朴登录服务暂时不可用，请稍后重试。",
+        },
+      });
+    }
+  }, [dispatch, loadAddresses, loginClient, sendToHermes, showLogin]);
+
+  const runLoginStep = useCallback(async (
+    phase: "requesting" | "applying_captcha" | "verifying",
+    action: () => Promise<PupuLoginResponse>,
+  ) => {
+    if (!heldTask.current) return;
+    showLogin({ phase });
+    try {
+      const response = await action();
+      if (response.phase === "connected") await loadAddresses();
+      else showLogin(response);
+    } catch {
+      showLogin({
+        phase: "error",
+        error: {
+          code: "login_unavailable",
+          message: "朴朴登录暂时不可用，请重试当前步骤。",
+          retryable: true,
+        },
+      });
+    }
+  }, [loadAddresses, showLogin]);
+
+  const submitLoginPhone = useCallback(
+    (phone: string) => runLoginStep("requesting", () => loginClient.start(phone)),
+    [loginClient, runLoginStep],
+  );
+  const completeLoginCaptcha = useCallback(
+    () => runLoginStep("applying_captcha", loginClient.completeCaptcha),
+    [loginClient, runLoginStep],
+  );
+  const submitLoginCode = useCallback(
+    (code: string) => runLoginStep("verifying", () => loginClient.verify(code)),
+    [loginClient, runLoginStep],
+  );
+  const resendLoginCode = useCallback(async () => {
+    if (!heldTask.current) return;
+    try {
+      showLogin(await loginClient.resend());
+    } catch {
+      showLogin({
+        phase: "error",
+        error: {
+          code: "resend_unavailable",
+          message: "暂时无法重新发送，请稍后再试。",
+          retryable: true,
+        },
+      });
+    }
+  }, [loginClient, showLogin]);
+  const selectAddress = useCallback(async (receiverId: string) => {
+    const selected = selectedAddresses.current.find((item) => item.id === receiverId);
+    if (!selected || !heldTask.current) return;
+    showAddresses("selecting", [selected]);
+    try {
+      await addressClient.select(receiverId);
+      showAddresses("selected", [selected]);
+      await resumeHeldTask();
+    } catch {
+      showAddresses("error", selectedAddresses.current);
+    }
+  }, [addressClient, resumeHeldTask, showAddresses]);
+
+  const retryAddresses = useCallback(
+    () => loadAddresses(),
+    [loadAddresses],
+  );
+
+  const cancelLogin = useCallback(async () => {
+    heldTask.current = null;
+    try {
+      await loginClient.cancel();
+    } catch {}
+    const requestId = activeRequestId.current;
+    if (requestId) dispatch({ type: "stream.interrupted", requestId });
+  }, [dispatch, loginClient]);
+
 
   const stop = useCallback(async () => {
     await chat.stop();
+    heldTask.current = null;
     if (snapshot.runId) {
       try {
         await (options.fetch || fetch)(
@@ -123,6 +298,8 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     chat.clearError();
     activeRequestId.current = null;
     activeText.current = "";
+    heldTask.current = null;
+    selectedAddresses.current = [];
     reduce({ kind: "reset" });
   }, [chat]);
 
@@ -133,6 +310,13 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     snapshot,
     transportBusy,
     submit,
+    submitLoginPhone,
+    submitLoginCode,
+    completeLoginCaptcha,
+    resendLoginCode,
+    cancelLogin,
+    selectAddress,
+    retryAddresses,
     stop,
     retry,
     reset,

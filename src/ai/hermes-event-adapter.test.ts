@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createHermesEventContext,
   mapHermesEvent,
+  selectMealProducts,
 } from "./hermes-event-adapter";
 
 const requestId = "request-1";
@@ -92,6 +93,7 @@ describe("mapHermesEvent", () => {
             },
           ],
           estimatedTotal: 12.9,
+          constraints: ["仅使用实时数据", "写入购物车或创建订单前必须确认"],
         },
       },
     });
@@ -260,5 +262,15 @@ describe("mapHermesEvent", () => {
         context,
       ),
     ).toBeNull();
+  });
+
+  it("fails closed unless a three-dish summary selects exactly three SKUs", () => {
+    const products = ["鸡胸肉", "蔬菜沙拉", "紫菜包饭", "备用鸡腿"].map((name, index) => ({
+      productId: `sku-${index}`, name, specification: "1份", unitPrice: 10,
+      quantity: 1, currency: "CNY" as const, stockStatus: "in_stock" as const,
+      collectedAt: "2026-08-13T00:00:00Z",
+    }));
+    expect(selectMealProducts(products, "第一道鸡胸肉。第二道蔬菜沙拉。第三道紫菜包饭。替换方案：备用鸡腿。")).toHaveLength(3);
+    expect(selectMealProducts(products, "第一道鸡胸肉。第二道蔬菜沙拉。第三道未匹配。")).toHaveLength(0);
   });
 });

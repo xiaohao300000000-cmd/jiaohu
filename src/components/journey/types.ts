@@ -54,6 +54,28 @@ export type PupuJourneyPayload = Omit<
   userBudget?: number;
 };
 
+export type PupuLoginPhase =
+  | "phone" | "requesting" | "captcha" | "applying_captcha"
+  | "sms" | "verifying" | "connected" | "error";
+
+export interface SavedPupuAddressPresentation {
+  phase: "loading" | "choose" | "selecting" | "selected" | "error";
+  addresses: Array<{
+    id: string;
+    label: string;
+    region: string;
+    detailHint: string;
+    phoneSuffix: string;
+  }>;
+}
+
+export interface PupuLoginPresentation {
+  phase: PupuLoginPhase;
+  attemptId?: string;
+  captchaUrl?: string;
+  retryAfterSeconds?: number;
+  error?: { code: string; message: string; retryable: boolean };
+}
 export type JourneyPresentation =
   | {
       capability: "pupu";
@@ -61,6 +83,20 @@ export type JourneyPresentation =
       mode: PresentationMode;
       dataSource: AgentDataSource;
       payload: PupuJourneyPayload;
+    }
+  | {
+      capability: "pupu";
+      component: "pupu.login";
+      mode: PresentationMode;
+      dataSource: "live";
+      payload: PupuLoginPresentation;
+    }
+  | {
+      capability: "pupu";
+      component: "pupu.address";
+      mode: PresentationMode;
+      dataSource: "live";
+      payload: SavedPupuAddressPresentation;
     }
   | {
       capability: "generic";
