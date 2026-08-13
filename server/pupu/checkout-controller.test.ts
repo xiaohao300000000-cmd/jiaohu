@@ -44,6 +44,26 @@ describe("PupuCheckoutController", () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts a freshly created invite-pay response when Pupu omits its status", async () => {
+    const execute = vi.fn()
+      .mockResolvedValueOnce({ ok: true, data: {
+        preview_id: "checkout-a", lines: [{ name: "鸡胸肉", quantity: 1, price: 1390 }],
+        product_total_price: 1390, logistics_fee: 0, total_discount_amount: 0,
+        total_amount: 1390, expires_at: "2999-01-01T00:00:00Z",
+        receiver_id: "receiver-a", store_id: "store-a", place_id: "place-a",
+      } })
+      .mockResolvedValueOnce({ ok: true, status: "succeeded", data: {
+        order: { order_id: "order-a" },
+        invite_pay: { invite_pay_id: "invite-a", order_id: "order-a", status: null },
+        share: { invite_pay_id: "invite-a", url: "pupumall://login.pupumall.com/invite_pay/detail?invite_pay_id=invite-a" },
+      } });
+    const controller = new PupuCheckoutController({ execute });
+    await controller.preview(scope, binding);
+    await expect(controller.create(scope, binding, "actor-a", {
+      previewId: "checkout-a", version: 1, idempotencyKey: "order-no-status",
+    })).resolves.toMatchObject({ status: "WAITING_PAY" });
+  });
+
   it("rejects a malicious or mismatched payment target", async () => {
     const execute = vi.fn()
       .mockResolvedValueOnce({ ok: true, data: {

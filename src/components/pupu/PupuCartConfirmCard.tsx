@@ -37,6 +37,9 @@ export function PupuCartConfirmCard({ products, onPreview, onCommit }: Props) {
       {preview && phase !== "verified" && (
         <p role="status">将写入 {quantity} 件商品，预计 ¥{(preview.totalCents / 100).toFixed(2)}</p>
       )}
+      {phase === "committing" && (
+        <p role="status">正在写入并核对真实购物车，请勿重复操作。</p>
+      )}
       {phase === "error" && <p role="alert">购物车状态未能确认，请先重新核对，系统不会重复写入。</p>}
       {!preview ? (
         <button type="button" onClick={() => void prepare()} disabled={phase === "loading"}>

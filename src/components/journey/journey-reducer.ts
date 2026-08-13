@@ -112,6 +112,7 @@ export function journeyReducer(
                   products: snapshot.presentation.payload.products.filter((product) =>
                     event.result.items.some((item) => item.id === product.productId),
                   ),
+                  estimatedTotal: event.result.totalAmount,
                 },
               }
             : snapshot.presentation,

@@ -123,6 +123,30 @@ describe("journeyReducer", () => {
     });
   });
 
+  it("recalculates the displayed total from the final selected products", () => {
+    const receiving = journeyReducer(initialJourneySnapshot, {
+      type: "request.sent", requestId: "request-1", text: requestText,
+    });
+    const assembling = journeyReducer(receiving, {
+      type: "presentation.updated", requestId: "request-1",
+      presentation: {
+        ...livePupuPresentation,
+        payload: { ...livePupuPresentation.payload, estimatedTotal: 142.52 },
+      },
+    });
+    const ready = journeyReducer(assembling, {
+      type: "stream.finished", requestId: "request-1",
+      result: {
+        title: "三道菜", summary: "只保留鲜牛奶", totalAmount: 12.9, currency: "CNY",
+        items: [{ id: "store-1", name: "鲜牛奶", detail: "950ml", price: 12.9 }],
+      },
+    });
+    expect(ready.presentation?.component).toBe("pupu.purchase-plan");
+    if (ready.presentation?.component === "pupu.purchase-plan") {
+      expect(ready.presentation.payload.estimatedTotal).toBe(12.9);
+    }
+  });
+
   it("pauses for approval and resumes after either explicit response", () => {
     const receiving = journeyReducer(initialJourneySnapshot, {
       type: "request.sent",
@@ -256,6 +280,7 @@ describe("journeyReducer", () => {
         summary: completeResult.summary,
         decisionSummary: completeResult.summary,
         products: [],
+        estimatedTotal: completeResult.totalAmount,
       },
     });
   });

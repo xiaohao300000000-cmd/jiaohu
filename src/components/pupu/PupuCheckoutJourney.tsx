@@ -18,6 +18,7 @@ interface Props {
 export function PupuCheckoutJourney({ onPreview, onCreate }: Props) {
   const [preview, setPreview] = useState<CheckoutPreview | null>(null);
   const [payment, setPayment] = useState<PaymentPresentation | null>(null);
+  const [creationUncertain, setCreationUncertain] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function load() {
@@ -29,7 +30,7 @@ export function PupuCheckoutJourney({ onPreview, onCreate }: Props) {
     if (!preview) return;
     setBusy(true); setError("");
     try { setPayment(await onCreate({ previewId: preview.previewId, version: preview.version })); }
-    catch { setError("订单结果未能确认。请勿重复下单，先重新查询当前状态。"); }
+    catch { setCreationUncertain(true); setError("订单结果未能确认。请勿重复下单，先重新查询当前状态。"); }
     finally { setBusy(false); }
   }
   if (payment) {
@@ -61,7 +62,7 @@ export function PupuCheckoutJourney({ onPreview, onCreate }: Props) {
             <div><dt>优惠</dt><dd>-¥{(preview.discountCents / 100).toFixed(2)}</dd></div>
           </dl>
           <p>这一步尚未创建订单</p>
-          <button type="button" onClick={() => void create()} disabled={busy}>
+          <button type="button" onClick={() => void create()} disabled={busy || creationUncertain}>
             <ShieldCheck size={17} aria-hidden="true" />确认并创建真实待付款订单
           </button>
         </>

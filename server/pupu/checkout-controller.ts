@@ -86,7 +86,10 @@ export class PupuCheckoutController {
     const order = record(data.order);
     const invitePayId = String(invite.invite_pay_id || "");
     const orderId = String(order.order_id || "");
-    if (!invitePayId || !orderId || invite.order_id !== orderId || String(invite.status) !== "WAITING_PAY") {
+    const inviteStatus = invite.status == null || invite.status === ""
+      ? "WAITING_PAY"
+      : String(invite.status);
+    if (!invitePayId || !orderId || invite.order_id !== orderId || inviteStatus !== "WAITING_PAY") {
       throw new Error("Pupu pending-payment order is incomplete");
     }
     const paymentTarget = validateOfficialPaymentTarget(String(share.url || share.path || ""), invitePayId);

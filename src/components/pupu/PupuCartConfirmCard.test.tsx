@@ -24,4 +24,17 @@ describe("PupuCartConfirmCard", () => {
     expect(onCommit).toHaveBeenCalledWith({ previewId: "cart-a", version: 1 });
     expect(await screen.findByText("已写入并核对真实购物车")).toBeVisible();
   });
+
+  it("announces that a real cart write is still running", async () => {
+    const user = userEvent.setup();
+    let finish!: (value: { status: string }) => void;
+    const onCommit = vi.fn(() => new Promise<{ status: string }>((resolve) => { finish = resolve; }));
+    render(<PupuCartConfirmCard products={products}
+      onPreview={vi.fn().mockResolvedValue({ previewId: "cart-a", version: 1, totalCents: 1390 })}
+      onCommit={onCommit} />);
+    await user.click(screen.getByRole("button", { name: "准备加入购物车" }));
+    await user.click(await screen.findByRole("button", { name: "确认加入朴朴购物车" }));
+    expect(screen.getByText(/正在写入并核对真实购物车/)).toBeVisible();
+    finish({ status: "verified" });
+  });
 });
