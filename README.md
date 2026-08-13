@@ -1,24 +1,63 @@
 # LiquidJourney + Hermes + Pupu
 
-LiquidJourney is a React/Vercel AI SDK interface for real, read-only Pupu tasks. The browser streams Hermes run events into deterministic Journey presentations. Product cards are rendered only from validated Pupu CLI artifacts; the application does not synthesize fallback products and exposes no cart or checkout mutation.
+LiquidJourney is a React/Vercel AI SDK interface with one server-owned task and capability routing center. Every user message first enters `/api/chat`; the browser, Hermes, and commerce routes consume the same versioned `TaskSnapshot` instead of independently guessing intent.
 
 ## Runtime shape
 
-- React 19 and Vercel AI SDK render the streaming Journey.
-- Express owns browser sessions, Pupu login, the same-origin captcha bridge, and Hermes scope tickets.
-- Hermes runs on loopback and uses DeepSeek V4 Flash.
+- React 19 and Vercel AI SDK render one composer and one streaming Journey.
+- `TaskCoordinator` resolves the task domain, goal, phase, context, requested capabilities, allowed capabilities, and next actions once.
+- Express owns browser sessions, Pupu login/address readiness, task policy, commerce phase gates, and Hermes scope tickets.
+- Hermes receives a deterministic contract built only from `TaskSnapshot.allowedCapabilities`.
 - The external Pupu CLI remains the provider boundary.
-- Each browser receives an opaque HttpOnly cookie and an isolated account directory.
+- The generic task contract already reserves delivery, Home Assistant, and calendar capabilities so future providers do not need their own intent classifiers.
 
-A Pupu task first calls `GET /api/pupu/login/status`. If authentication is required, the same Journey card moves through phone, captcha, and SMS states. Phone and OTP values use only the dedicated login routes; they are never included in AI messages. On verified success, the held task is consumed and sent to Hermes exactly once.
+## Task and capability flow
 
-## Security boundaries
+```text
+user message
+  -> POST /api/chat
+  -> TaskCoordinator resolve or resume
+  -> task.updated
+  -> readiness and capability policy
+      -> ordinary advice: Hermes without provider scope
+      -> awaiting_login: existing login Journey, no Hermes
+      -> awaiting_address: existing address Journey, no Hermes
+      -> allowed read capability: one task-bound scope ticket, then Hermes
+  -> provider result attaches selected products to the same task
+```
 
-Production must use HTTPS and set `APP_PUBLIC_ORIGIN` to the public HTTPS origin. Mutating login routes require a matching `Origin` and JSON body. Captcha traffic is proxied only from a recorded loopback helper to the current browser session.
+The task context preserves people count, budget, dietary requirements, accumulated requirements, product quantities, selected live products, address binding, and cart/checkout preview bindings. Continuations send `taskId`; login/address completion sends `taskId` with `resume: true`.
 
-Persistent Pupu authentication lives under `PUPU_ACCOUNTS_ROOT`. Login attempts are process-memory state with a short TTL. Cancel removes only the current attempt; `DELETE /api/pupu/login/session` is the explicit scoped logout and removes only the cookie-bound account. Account identifiers and paths are resolved server-side.
+## Commerce safety matrix
 
-The read-only Hermes plugin accepts only a short-lived server-issued scope ticket. Model-supplied account IDs, roots, tickets, phone numbers, codes, cookies, tokens, signatures, and seals are ignored or rejected.
+| Phase | Server capability | Real effect |
+| --- | --- | --- |
+| `advising` | advice only | none |
+| `searching_catalog` | catalog or cart read | read only |
+| `editing_plan` | revise/search | none |
+| `awaiting_cart_confirmation` | bind cart preview | none |
+| `writing_cart` | cart write | only after matching task/version/preview and explicit UI action |
+| `awaiting_order_confirmation` | bind checkout preview | read-only settlement preview |
+| `creating_order` | create order | only after matching task/version/preview and explicit UI action |
+| `awaiting_payment` | payment status/navigation | no automatic payment |
+
+Natural-language confirmation never authorizes a mutation. Commerce routes reject missing, stale, or illegal task state before invoking cart or checkout controllers. Scope tickets bind the browser run to `taskId`, `taskVersion`, and exact read capabilities; the Hermes plugin rejects an operation not present in the ticket before starting the CLI.
+
+## Login and address flow
+
+All inputs first call `POST /api/chat`. If the task requires Pupu and the cookie-bound session or selected address is missing, the server emits `task.updated` plus the existing login/address presentation and stops before Hermes. Phone and OTP values use only dedicated login routes and are never included in AI messages.
+
+Login routes:
+
+- `GET /api/pupu/login/status`
+- `POST /api/pupu/login/start`
+- `GET /api/pupu/login/captcha/:attemptId/`
+- `POST /api/pupu/login/captcha/:attemptId/result`
+- `POST /api/pupu/login/captcha/complete`
+- `POST /api/pupu/login/verify`
+- `POST /api/pupu/login/resend`
+- `POST /api/pupu/login/cancel`
+- `DELETE /api/pupu/login/session`
 
 ## VPS environment
 
@@ -35,47 +74,19 @@ PUPU_ACCOUNTS_ROOT=/home/pupu/.local/share/jiaohu/pupu-accounts
 PUPU_LOGIN_RUNTIME_ROOT=/home/pupu/.local/state/jiaohu/pupu-login
 PUPU_SCOPE_TICKET_DIR=/home/pupu/.local/state/jiaohu/pupu-login/scope-tickets
 PUPU_RESULT_DIR=/home/pupu/.hermes/run-artifacts
-PUPU_TOOL_TIMEOUT_SECONDS=75
+PUPU_TOOL_TIMEOUT_SECONDS=150
 ```
 
-`PUPU_TOOL_TIMEOUT_SECONDS` accepts integers from 10 through 180. Login attempts default to 600 seconds and SMS resend cooldown to 60 seconds; configure them with `PUPU_LOGIN_ATTEMPT_TTL_SECONDS` and `PUPU_LOGIN_RESEND_COOLDOWN_SECONDS`.
-
-Install the read-only plugin and safe directories from the repository:
-
-```bash
-bash deploy/hermes/install-plugin.sh
-```
-
-Restart only the LiquidJourney and Hermes services after configuration changes. Hermes remains loopback-only; terminate HTTPS at the existing VPS reverse proxy.
-
-## Login routes
-
-- `GET /api/pupu/login/status`
-- `POST /api/pupu/login/start`
-- `GET /api/pupu/login/captcha/:attemptId/`
-- `POST /api/pupu/login/captcha/:attemptId/result`
-- `POST /api/pupu/login/captcha/complete`
-- `POST /api/pupu/login/verify`
-- `POST /api/pupu/login/resend`
-- `POST /api/pupu/login/cancel`
-- `DELETE /api/pupu/login/session`
-
-All responses are non-cacheable and omit phone, OTP, provider credentials, and raw captcha helper addresses.
+`PUPU_TOOL_TIMEOUT_SECONDS` accepts integers from 10 through 180. Install the read-only plugin and safe directories with `bash deploy/hermes/install-plugin.sh`.
 
 ## Verification
 
 ```bash
 npm run lint
-npm test -- --run
+npx vitest run --maxWorkers=1
 /home/pupu/providers/pupu-cli/.venv/bin/python -m pytest -q hermes/plugins/pupu_readonly/tests
 npm run build
 npm run test:browser
 ```
 
-Browser contract tests stub login transitions and never claim a real provider result. Real acceptance is separately gated:
-
-```bash
-PUPU_LIVE=1 npm run test:live
-```
-
-A real login run requires an operator to complete the official slider and short-lived SMS code in the browser. A passing real acceptance must show `data-source="live"`, a non-empty run ID, at least one provider product, and no mutation action. Without that operator-backed run, only implementation and contract verification—not live provider success—may be claimed.
+Browser and unit contracts use stubs and do not perform a real provider mutation. Do not run `test:live` or real cart/order acceptance without separate explicit authorization.

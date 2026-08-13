@@ -10,11 +10,49 @@ async function installLoginTransitions(page: Page): Promise<LoginContract> {
   const cancelRequests: Request[] = [];
 
   await page.route("**/api/chat", async (route) => {
-    chatRequests.push(route.request());
+    const request = route.request();
+    chatRequests.push(request);
+    const body = request.postDataJSON() as { requestId?: string };
+    const requestId = body.requestId || "login-contract-request";
+    const task = {
+      taskId: "login-contract-task",
+      version: 1,
+      requestText: "朴朴任务",
+      domain: "commerce",
+      goal: "find_products",
+      phase: "awaiting_login",
+      context: {
+        dietaryRequirements: [],
+        requirements: [],
+        selectedProducts: [],
+      },
+      requestedCapabilities: ["commerce.catalog.search"],
+      allowedCapabilities: [],
+      nextActions: ["login_pupu"],
+    };
+    const event = (data: unknown) =>
+      `data: ${JSON.stringify({ type: "data-journey", data })}\n\n`;
     await route.fulfill({
-      status: 500,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "contract blocks provider execution" }),
+      status: 200,
+      headers: {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        "x-vercel-ai-ui-message-stream": "v1",
+      },
+      body:
+        event({ type: "task.updated", requestId, task }) +
+        event({
+          type: "presentation.updated",
+          requestId,
+          presentation: {
+            capability: "pupu",
+            component: "pupu.login",
+            mode: "anchored",
+            dataSource: "live",
+            payload: { phase: "phone" },
+          },
+        }) +
+        "data: [DONE]\n\n",
     });
   });
   await page.route("**/api/pupu/login/**", async (route) => {
@@ -97,7 +135,7 @@ test("first Pupu use stays inside Journey through phone, captcha, and SMS", asyn
   await page.getByRole("button", { name: "验证并继续" }).click();
   await expect(page.getByRole("form", { name: "短信验证" })).toBeVisible();
   await expect(page.locator('[data-component="pupu.purchase-plan"]')).toHaveCount(0);
-  expect(contract.chatRequests).toHaveLength(0);
+  expect(contract.chatRequests).toHaveLength(1);
 });
 
 test("cancel clears the transient login flow without starting Hermes", async ({
@@ -116,6 +154,6 @@ test("cancel clears the transient login flow without starting Hermes", async ({
     "interrupted",
   );
   expect(contract.cancelRequests).toHaveLength(1);
-  expect(contract.chatRequests).toHaveLength(0);
+  expect(contract.chatRequests).toHaveLength(1);
   await expect(page.locator('[data-component="pupu.purchase-plan"]')).toHaveCount(0);
 });
