@@ -21,6 +21,7 @@ READ_ONLY_OPERATIONS = {
     "capabilities",
     "login.status",
     "catalog.search",
+    "catalog.meal-search",
     "catalog.detail",
     "cart.read",
 }
@@ -59,7 +60,7 @@ class ProcessRunner(Protocol):
 
 
 def provider_timeout_seconds(env: dict[str, str] | os._Environ[str] = os.environ) -> int:
-    raw = env.get("PUPU_TOOL_TIMEOUT_SECONDS", "75")
+    raw = env.get("PUPU_TOOL_TIMEOUT_SECONDS", "150")
     try:
         timeout = int(raw)
     except (TypeError, ValueError) as exc:
@@ -139,7 +140,26 @@ def build_argv(operation: str, arguments: dict[str, object]) -> list[str]:
 
     command, action = operation.split(".", 1)
     argv = [cli_path, command, action]
-    if operation == "catalog.search":
+    if operation == "catalog.meal-search":
+        trusted_scope = arguments.get("_trusted_scope")
+        if not isinstance(trusted_scope, TrustedPupuScope):
+            raise ValueError("trusted Pupu scope is required")
+        queries = arguments.get("queries")
+        if (
+            not isinstance(queries, list) or len(queries) != 3
+            or any(not isinstance(item, str) or not item.strip() for item in queries)
+        ):
+            raise ValueError("queries must contain exactly three non-empty strings")
+        argv[1:3] = ["catalog", "scoped-meal-search"]
+        for query in queries:
+            argv.extend(["--query", query])
+        argv.extend([
+            "--size", "3",
+            "--store-id", trusted_scope.store_id,
+            "--place-id", trusted_scope.place_id,
+            "--receiver-id", trusted_scope.receiver_id,
+        ])
+    elif operation == "catalog.search":
         trusted_scope = arguments.get("_trusted_scope")
         if isinstance(trusted_scope, TrustedPupuScope):
             argv[1:3] = ["catalog", "scoped-search"]
@@ -149,6 +169,15 @@ def build_argv(operation: str, arguments: dict[str, object]) -> list[str]:
             raise ValueError("size must be an integer from 1 to 50")
         argv.extend(["--size", str(size)])
         if isinstance(trusted_scope, TrustedPupuScope):
+            argv.extend([
+                "--store-id", trusted_scope.store_id,
+                "--place-id", trusted_scope.place_id,
+                "--receiver-id", trusted_scope.receiver_id,
+            ])
+    elif operation == "cart.read":
+        trusted_scope = arguments.get("_trusted_scope")
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv[1:3] = ["cart", "scoped-read"]
             argv.extend([
                 "--store-id", trusted_scope.store_id,
                 "--place-id", trusted_scope.place_id,

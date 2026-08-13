@@ -9,7 +9,7 @@ class RecordingContext:
         self.tools.append(definition)
 
 
-def test_registers_exactly_five_read_only_tools():
+def test_registers_only_read_only_tools():
     context = RecordingContext()
 
     register(context)
@@ -18,6 +18,7 @@ def test_registers_exactly_five_read_only_tools():
         "pupu_capabilities",
         "pupu_auth_status",
         "pupu_search_catalog",
+        "pupu_search_meal_catalog",
         "pupu_get_product",
         "pupu_read_cart",
     }
@@ -55,6 +56,7 @@ def test_handlers_delegate_only_to_expected_operations(monkeypatch):
         "capabilities",
         "login.status",
         "catalog.search",
+        "catalog.meal-search",
         "catalog.detail",
         "cart.read",
     ]

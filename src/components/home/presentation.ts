@@ -25,7 +25,7 @@ const quickPatterns: Array<[RegExp, DemoTaskKind]> = [
 ];
 
 const pupuPurchasePattern =
-  /朴朴帮我买|朴朴.*(买|采购)|采购方案|买.*(牛奶|鸡蛋|食材|水果|蔬菜)|火锅.*预算|预算.*火锅/;
+  /朴朴帮我买|朴朴.*(买|采购)|采购方案|买.*(牛奶|鸡蛋|食材|水果|蔬菜)|火锅.*预算|预算.*火锅|(?:做|吃).*(?:低脂|三道菜|营养全面)|(?:低脂|三道菜).*(?:菜|晚餐|营养)/;
 
 export function resolveDemoPresentation(input: string): TaskPresentation {
   const normalized = input.trim();

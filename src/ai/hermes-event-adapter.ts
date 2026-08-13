@@ -87,6 +87,10 @@ const toolPresentation: Record<string, { label: string; detail: string }> = {
     label: "搜索朴朴商品",
     detail: "正在读取实时商品信息",
   },
+  pupu_search_meal_catalog: {
+    label: "组合检索三道菜食材",
+    detail: "正在依次读取瘦蛋白、蔬菜和核心配料",
+  },
   pupu_get_product: {
     label: "读取商品详情",
     detail: "正在核对实时商品详情",
@@ -139,10 +143,21 @@ function toProduct(input: z.infer<typeof normalizedSkuSchema>): ProductSummary {
   };
 }
 
+function selectedMealProducts(
+  products: ProductSummary[],
+  summary?: string,
+): ProductSummary[] {
+  if (!summary) return products;
+  const primaryPlan = summary.split(/替换方案|可替换项|一个说明/)[0];
+  const selected = products.filter((product) => primaryPlan.includes(product.name));
+  return selected.length > 0 ? selected : products;
+}
+
 function journeyResult(
   products: ProductSummary[],
   summary?: string,
 ): JourneyResult {
+  products = selectedMealProducts(products, summary);
   const totalAmount = products.reduce(
     (sum, product) => sum + product.unitPrice * product.quantity,
     0,
@@ -233,6 +248,7 @@ function mapPupuOutput(
 
   if (
     event.tool_name !== "pupu_search_catalog" &&
+    event.tool_name !== "pupu_search_meal_catalog" &&
     event.tool_name !== "pupu_get_product" &&
     event.tool_name !== "pupu_read_cart"
   ) {
@@ -249,8 +265,12 @@ function mapPupuOutput(
   if (!parsedProducts.success) return invalidResult(context);
 
   const products = parsedProducts.data.map(toProduct);
-  context.products = products;
-  const total = products.reduce(
+  context.products = [
+    ...new Map(
+      [...context.products, ...products].map((product) => [product.productId, product]),
+    ).values(),
+  ];
+  const total = context.products.reduce(
     (sum, product) => sum + product.unitPrice * product.quantity,
     0,
   );
@@ -270,7 +290,7 @@ function mapPupuOutput(
         people: 1,
         constraints: ["仅使用实时数据", "首版只读，不修改购物车"],
         decisionSummary: "商品、价格与库存均来自本次朴朴 CLI 实时读取。",
-        products,
+        products: context.products,
         estimatedTotal: total,
         currency: "CNY",
         cartVersion: 0,

@@ -79,7 +79,7 @@
  def _catalog_service(
      *,
      household_id: str,
-@@ -662,6 +720,96 @@
+@@ -662,6 +720,137 @@
      )
 
 
@@ -98,7 +98,7 @@
 +    json_output: bool = typer.Option(False, "--json"),
 +) -> None:
 +    """Search live products for a trusted login-account address binding."""
-+    del json_output, place_id, receiver_id
++    del json_output
 +    root = data_root or _data_root_default()
 +
 +    async def execute():
@@ -125,6 +125,47 @@
 +        request_id=request_id,
 +        household_id=account_id,
 +        action=execute,
++        next_actions=("pupu.catalog.detail",),
++    )
++
++
++@catalog_app.command("scoped-meal-search")
++def catalog_scoped_meal_search(
++    query: list[str] = typer.Option(..., "--query"),
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    size: int = typer.Option(3, "--size", min=1, max=10),
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Sequentially search three meal ingredient groups in one provider process."""
++    del json_output
++    root = data_root or _data_root_default()
++    if len(query) != 3 or any(not item.strip() for item in query):
++        raise ValueError("exactly three non-empty meal queries are required")
++
++    async def execute():
++        from pupu_assistant.integrations.pupu.catalog_service import PupuCatalogService
++        executor, _, _ = await _fresh_login_account_executor(
++            account_id=account_id, accounts_root=accounts_root, data_root=root,
++            allowed_risks={"read_only"},
++            context_overrides={"store_id": store_id},
++        )
++        service = PupuCatalogService(executor, store_id=store_id)
++        result = await service.search(query[0], page=1, size=max(size * 3, 9))
++        return {
++            "items": [sku.model_dump(mode="json") for sku in result.items],
++            "queries": list(query),
++            "provider_query": query[0],
++        }
++
++    _run_agent_command(
++        operation="pupu.catalog.meal_search", request_id=request_id,
++        household_id=account_id, action=execute,
 +        next_actions=("pupu.catalog.detail",),
 +    )
 +
@@ -176,7 +217,7 @@
  @catalog_app.command("detail")
  def catalog_detail(
      store_product_id: str = typer.Option(..., "--store-product-id"),
-@@ -685,6 +833,31 @@
+@@ -685,6 +874,31 @@
      )
 
 
@@ -208,7 +249,7 @@
  @approval_app.command("issue")
  def approval_issue(
      payload: Annotated[Path, typer.Option("--payload")],
-@@ -733,6 +906,111 @@
+@@ -733,6 +947,111 @@
          action=issue,
      )
 
@@ -320,7 +361,7 @@
  @cart_app.command("read")
  def cart_read_live(
      household_id: str = typer.Option(..., "--household-id"),
-@@ -891,6 +1169,149 @@
+@@ -891,6 +1210,149 @@
      )
 
 

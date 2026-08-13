@@ -85,6 +85,19 @@ def test_run_pupu_scopes_catalog_detail_to_selected_store(tmp_path, monkeypatch)
     assert argv[argv.index("--receiver-id") + 1] == "receiver-a"
 
 
+def test_run_pupu_scopes_cart_read_to_selected_store(tmp_path, monkeypatch):
+    write_ticket(tmp_path, "journey-cart")
+    monkeypatch.setenv("PUPU_SCOPE_TICKET_DIR", str(tmp_path))
+    runner = RecordingRunner()
+    result = json.loads(run_pupu(
+        "cart.read", {"_trusted_task_id": "journey-cart"}, runner=runner,
+    ))
+    assert result["ok"] is True
+    argv = runner.calls[0][0]
+    assert argv[1:3] == ["cart", "scoped-read"]
+    assert argv[argv.index("--store-id") + 1] == "store-a"
+
+
 def test_run_pupu_fails_closed_before_cli_when_ticket_missing(tmp_path, monkeypatch):
     monkeypatch.setenv("PUPU_SCOPE_TICKET_DIR", str(tmp_path))
     runner = RecordingRunner()

@@ -40,6 +40,7 @@ describe("resolveDemoPresentation", () => {
   });
   it("classifies only deterministic Pupu capability inputs", () => {
     expect(isPupuTask("买牛奶和鸡蛋")).toBe(true);
+    expect(isPupuTask("我今晚想做一个低脂的三道菜，要步骤简单、营养全面。")).toBe(true);
     expect(isPupuTask("请使用 pupu_search_catalog 搜索牛奶")).toBe(true);
     expect(isPupuTask("查一下我的朴朴订单")).toBe(true);
     expect(isPupuTask("查一下我的快递")).toBe(false);

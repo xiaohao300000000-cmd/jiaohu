@@ -15,6 +15,7 @@ import { handlePupuAddressRequest } from "./pupu/address-router";
 import { PupuCartController } from "./pupu/cart-controller";
 import { handlePupuCommerceRequest } from "./pupu/commerce-router";
 import { PupuCheckoutController } from "./pupu/checkout-controller";
+import { isPupuRequest } from "./pupu/request-classifier";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
@@ -93,7 +94,7 @@ app.post(
       await sendWebResponse(
         await handleChatRequest(request, {
           preparePupuScope: async (source, sessionId, input) => {
-            if (!/(?:pupu|\\u6734\\u6734|\\u91c7\\u8d2d|\\u4e70.*(?:\\u725b\\u5976|\\u9e21\\u86cb|\\u98df\\u6750|\\u6c34\\u679c|\\u852c\\u83dc)|\\u706b\\u9505.*\\u9884\\u7b97|\\u9884\\u7b97.*\\u706b\\u9505)/i.test(input)) {
+            if (!isPupuRequest(input)) {
               return;
             }
             const token = readPupuSessionCookie(source.headers.get("cookie"));

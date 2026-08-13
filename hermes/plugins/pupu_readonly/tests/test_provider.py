@@ -126,7 +126,7 @@ def test_uses_default_provider_timeout(monkeypatch):
     monkeypatch.delenv("PUPU_TOOL_TIMEOUT_SECONDS", raising=False)
     runner = RecordingRunner(completed=successful_capabilities())
     run_pupu("capabilities", {}, runner=runner)
-    assert runner.calls[0]["timeout"] == 75
+    assert runner.calls[0]["timeout"] == 150
 
 
 def test_uses_configured_provider_timeout(monkeypatch):

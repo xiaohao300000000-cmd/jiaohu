@@ -101,6 +101,20 @@ export function journeyReducer(
         ...snapshot,
         state: "ready",
         result: event.result,
+        presentation:
+          snapshot.presentation?.component === "pupu.purchase-plan"
+            ? {
+                ...snapshot.presentation,
+                payload: {
+                  ...snapshot.presentation.payload,
+                  summary: event.result.summary,
+                  decisionSummary: event.result.summary,
+                  products: snapshot.presentation.payload.products.filter((product) =>
+                    event.result.items.some((item) => item.id === product.productId),
+                  ),
+                },
+              }
+            : snapshot.presentation,
         partialResult: event.result,
         awaitingInput: null,
         error: null,
