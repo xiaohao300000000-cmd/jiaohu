@@ -102,7 +102,7 @@ app.post(
             const selection = addressController.getSelection(session.accountId);
             return selection ? "ready" : "awaiting_address";
           },
-          preparePupuScope: async (source, sessionId) => {
+          preparePupuScope: async (source, sessionId, task) => {
             const token = readPupuSessionCookie(source.headers.get("cookie"));
             const session = await sessionStore.lookup(token);
             if (!session) throw new Error("Pupu browser session is required");
@@ -110,6 +110,9 @@ app.post(
             if (!selection) throw new Error("Pupu delivery address selection is required");
             await scopeTickets.issue({
               sessionId,
+              taskId: task.taskId,
+              taskVersion: task.version,
+              capabilities: task.allowedCapabilities,
               accountId: session.accountId,
               accountsRoot: loginConfig.accountsRoot,
               dataRoot: loginConfig.dataRoot,

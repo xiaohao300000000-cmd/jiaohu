@@ -11,6 +11,13 @@ import stat
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 ACCOUNT = re.compile(r"^acct_[a-f0-9]{32}$")
 NONCE = re.compile(r"^[a-f0-9]{32}$")
+CAPABILITY_OPERATIONS = {
+    "commerce.catalog.search": frozenset({"catalog.search", "catalog.detail"}),
+    "commerce.catalog.meal-search": frozenset(
+        {"catalog.meal-search", "catalog.detail"}
+    ),
+    "commerce.cart.read": frozenset({"cart.read"}),
+}
 
 
 class ScopeTicketError(ValueError):
@@ -19,6 +26,9 @@ class ScopeTicketError(ValueError):
 
 @dataclass(frozen=True)
 class TrustedPupuScope:
+    task_id: str
+    task_version: int
+    allowed_operations: frozenset[str]
     account_id: str
     accounts_root: Path
     data_root: Path
@@ -48,10 +58,48 @@ def _expires_at(value: object) -> datetime:
     return parsed
 
 
-def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
-    if not SAFE_ID.fullmatch(task_id):
+def _task_policy(value: dict) -> tuple[str, int, frozenset[str]]:
+    task_id = value.get("taskId")
+    task_version = value.get("taskVersion")
+    capabilities = value.get("capabilities")
+    if not isinstance(task_id, str) or not SAFE_ID.fullmatch(task_id):
+        raise ScopeTicketError("scope ticket task identity is invalid")
+    if (
+        not isinstance(task_version, int)
+        or isinstance(task_version, bool)
+        or task_version < 1
+    ):
+        raise ScopeTicketError("scope ticket task version is invalid")
+    if (
+        not isinstance(capabilities, list)
+        or not capabilities
+        or len(set(capabilities)) != len(capabilities)
+        or any(
+            not isinstance(capability, str)
+            or capability not in CAPABILITY_OPERATIONS
+            for capability in capabilities
+        )
+    ):
+        raise ScopeTicketError("scope ticket capabilities are invalid")
+    operations = frozenset(
+        operation
+        for capability in capabilities
+        for operation in CAPABILITY_OPERATIONS[capability]
+    )
+    return task_id, task_version, operations
+
+
+def consume_scope_ticket(
+    root: Path,
+    session_id: str,
+    operation: str,
+    *,
+    expected_task_id: str | None = None,
+    expected_task_version: int | None = None,
+) -> TrustedPupuScope:
+    if not SAFE_ID.fullmatch(session_id):
         raise ScopeTicketError("task identity is unsafe")
-    source = root / f"{task_id}.json"
+    source = root / f"{session_id}.json"
     valid = False
     try:
         flags = os.O_RDONLY
@@ -61,6 +109,8 @@ def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
             descriptor = os.open(source, flags)
         except FileNotFoundError as exc:
             raise ScopeTicketError("scope ticket missing") from exc
+        except OSError as exc:
+            raise ScopeTicketError("scope ticket is not a regular file") from exc
         try:
             mode = os.fstat(descriptor).st_mode
             if not stat.S_ISREG(mode) or stat.S_IMODE(mode) != 0o600:
@@ -73,10 +123,20 @@ def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
         finally:
             if descriptor >= 0:
                 os.close(descriptor)
-        if not isinstance(value, dict) or value.get("version") != 1:
+        if not isinstance(value, dict) or value.get("version") != 2:
             raise ScopeTicketError("scope ticket is malformed")
-        if value.get("sessionId") != task_id:
+        if value.get("sessionId") != session_id:
             raise ScopeTicketError("scope ticket identity mismatch")
+        task_id, task_version, allowed_operations = _task_policy(value)
+        if expected_task_id is not None and task_id != expected_task_id:
+            raise ScopeTicketError("scope ticket task mismatch")
+        if (
+            expected_task_version is not None
+            and task_version != expected_task_version
+        ):
+            raise ScopeTicketError("scope ticket task version mismatch")
+        if operation not in allowed_operations:
+            raise ScopeTicketError("scope ticket operation is not allowed")
         account_id = value.get("accountId")
         if not isinstance(account_id, str) or not ACCOUNT.fullmatch(account_id):
             raise ScopeTicketError("scope ticket account is invalid")
@@ -101,6 +161,9 @@ def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
             raise ScopeTicketError("data root is not allowlisted")
         valid = True
         return TrustedPupuScope(
+            task_id=task_id,
+            task_version=task_version,
+            allowed_operations=allowed_operations,
             account_id=account_id,
             accounts_root=accounts_root,
             data_root=data_root,
@@ -111,4 +174,3 @@ def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
     finally:
         if not valid:
             source.unlink(missing_ok=True)
-

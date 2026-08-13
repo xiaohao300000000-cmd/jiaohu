@@ -357,7 +357,9 @@ def run_pupu(
                     "/home/pupu/.local/state/jiaohu/pupu-login/scope-tickets",
                 )
             )
-            scoped_arguments["_trusted_scope"] = consume_scope_ticket(ticket_root, task_id)
+            scoped_arguments["_trusted_scope"] = consume_scope_ticket(
+                ticket_root, task_id, operation
+            )
         argv = build_argv(operation, scoped_arguments)
         completed = runner(
             argv, timeout=provider_timeout_seconds(), max_output_bytes=MAX_OUTPUT_BYTES

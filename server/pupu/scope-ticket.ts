@@ -1,12 +1,21 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, mkdir, open, readdir, readFile, rename, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import type { TaskCapability } from "../../src/domain/task-contract";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 const ACCOUNT = /^acct_[a-f0-9]{32}$/;
+const PUPU_READ_CAPABILITIES = new Set<TaskCapability>([
+  "commerce.catalog.search",
+  "commerce.catalog.meal-search",
+  "commerce.cart.read",
+]);
 
 export interface PupuScopeTicketInput {
   sessionId: string;
+  taskId: string;
+  taskVersion: number;
+  capabilities: TaskCapability[];
   accountId: string;
   accountsRoot: string;
   dataRoot: string;
@@ -32,8 +41,17 @@ export class PupuScopeTicketStore {
   }
 
   async issue(input: PupuScopeTicketInput): Promise<{ path: string }> {
+    const capabilitiesAreSafe =
+      input.capabilities.length > 0 &&
+      new Set(input.capabilities).size === input.capabilities.length &&
+      input.capabilities.every((capability) =>
+        PUPU_READ_CAPABILITIES.has(capability));
     if (
       !SAFE_ID.test(input.sessionId) ||
+      !SAFE_ID.test(input.taskId) ||
+      !Number.isSafeInteger(input.taskVersion) ||
+      input.taskVersion < 1 ||
+      !capabilitiesAreSafe ||
       !ACCOUNT.test(input.accountId) ||
       !isAbsolute(input.accountsRoot) ||
       !isAbsolute(input.dataRoot) ||
@@ -48,7 +66,7 @@ export class PupuScopeTicketStore {
     const destination = join(this.options.root, `${input.sessionId}.json`);
     const temporary = join(this.options.root, `.${randomUUID()}.tmp`);
     const value = {
-      version: 1,
+      version: 2,
       ...input,
       expiresAt: new Date(this.now() + this.options.ttlMs).toISOString(),
       nonce: randomBytes(16).toString("hex"),
@@ -73,6 +91,7 @@ export class PupuScopeTicketStore {
     if (!SAFE_ID.test(sessionId)) return;
     await unlink(join(this.options.root, `${sessionId}.json`)).catch(() => undefined);
   }
+
   async sweepExpired(): Promise<number> {
     const entries = await readdir(this.options.root, { withFileTypes: true })
       .catch(() => []);
@@ -97,4 +116,3 @@ export class PupuScopeTicketStore {
     return removed;
   }
 }
-
