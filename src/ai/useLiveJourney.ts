@@ -12,6 +12,7 @@ import type {
 import type { JourneyUIMessage } from "./journey-ui-message";
 import { isPupuTask } from "../components/home/presentation";
 import { createPupuLoginClient, type PupuLoginResponse } from "./pupu-login-client";
+import { createPupuAddressClient, type SavedPupuAddress } from "./pupu-address-client";
 
 interface UseLiveJourneyOptions {
   fetch?: typeof fetch;
@@ -38,8 +39,13 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
   const activeRequestId = useRef<string | null>(null);
   const activeText = useRef("");
   const heldTask = useRef<{ text: string; token: string } | null>(null);
+  const selectedAddresses = useRef<SavedPupuAddress[]>([]);
   const loginClient = useMemo(
     () => createPupuLoginClient(options.fetch || fetch),
+    [options.fetch],
+  );
+  const addressClient = useMemo(
+    () => createPupuAddressClient(options.fetch || fetch),
     [options.fetch],
   );
   const transport = useMemo(
@@ -121,13 +127,43 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     [dispatch],
   );
 
+  const showAddresses = useCallback((
+    phase: "loading" | "choose" | "selecting" | "selected" | "error",
+    addresses: SavedPupuAddress[] = selectedAddresses.current,
+  ) => {
+    const requestId = activeRequestId.current;
+    if (!requestId) return;
+    dispatch({
+      type: "presentation.updated",
+      requestId,
+      presentation: {
+        capability: "pupu",
+        component: "pupu.address",
+        mode: "canvas",
+        dataSource: "live",
+        payload: { phase, addresses },
+      },
+    });
+  }, [dispatch]);
+
+  const loadAddresses = useCallback(async () => {
+    if (!heldTask.current) return;
+    showAddresses("loading", []);
+    try {
+      const result = await addressClient.list();
+      selectedAddresses.current = result.addresses;
+      showAddresses("choose", result.addresses);
+    } catch {
+      showAddresses("error", []);
+    }
+  }, [addressClient, showAddresses]);
+
   const resumeHeldTask = useCallback(async () => {
     const held = heldTask.current;
     if (!held) return;
     heldTask.current = null;
-    showLogin({ phase: "connected" });
     await sendToHermes(held.text);
-  }, [sendToHermes, showLogin]);
+  }, [sendToHermes]);
 
   const submit = useCallback(async (text: string) => {
     const normalized = text.trim();
@@ -143,7 +179,7 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     dispatch({ type: "request.sent", requestId, text: normalized });
     try {
       const status = await loginClient.status();
-      if (status.phase === "connected") await resumeHeldTask();
+      if (status.phase === "connected") await loadAddresses();
       else showLogin(status);
     } catch {
       dispatch({
@@ -155,7 +191,7 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
         },
       });
     }
-  }, [dispatch, loginClient, resumeHeldTask, sendToHermes, showLogin]);
+  }, [dispatch, loadAddresses, loginClient, sendToHermes, showLogin]);
 
   const runLoginStep = useCallback(async (
     phase: "requesting" | "applying_captcha" | "verifying",
@@ -165,7 +201,7 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     showLogin({ phase });
     try {
       const response = await action();
-      if (response.phase === "connected") await resumeHeldTask();
+      if (response.phase === "connected") await loadAddresses();
       else showLogin(response);
     } catch {
       showLogin({
@@ -177,7 +213,7 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
         },
       });
     }
-  }, [resumeHeldTask, showLogin]);
+  }, [loadAddresses, showLogin]);
 
   const submitLoginPhone = useCallback(
     (phone: string) => runLoginStep("requesting", () => loginClient.start(phone)),
@@ -206,6 +242,24 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
       });
     }
   }, [loginClient, showLogin]);
+  const selectAddress = useCallback(async (receiverId: string) => {
+    const selected = selectedAddresses.current.find((item) => item.id === receiverId);
+    if (!selected || !heldTask.current) return;
+    showAddresses("selecting", [selected]);
+    try {
+      await addressClient.select(receiverId);
+      showAddresses("selected", [selected]);
+      await resumeHeldTask();
+    } catch {
+      showAddresses("error", selectedAddresses.current);
+    }
+  }, [addressClient, resumeHeldTask, showAddresses]);
+
+  const retryAddresses = useCallback(
+    () => loadAddresses(),
+    [loadAddresses],
+  );
+
   const cancelLogin = useCallback(async () => {
     heldTask.current = null;
     try {
@@ -245,6 +299,7 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     activeRequestId.current = null;
     activeText.current = "";
     heldTask.current = null;
+    selectedAddresses.current = [];
     reduce({ kind: "reset" });
   }, [chat]);
 
@@ -260,6 +315,8 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     completeLoginCaptcha,
     resendLoginCode,
     cancelLogin,
+    selectAddress,
+    retryAddresses,
     stop,
     retry,
     reset,

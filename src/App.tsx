@@ -19,6 +19,8 @@ export default function App() {
     completeLoginCaptcha,
     resendLoginCode,
     cancelLogin,
+    selectAddress,
+    retryAddresses,
     stop,
     retry,
     reset,
@@ -105,6 +107,8 @@ export default function App() {
                     onLoginCaptchaComplete={() => void completeLoginCaptcha()}
                     onLoginResend={() => void resendLoginCode()}
                     onLoginCancel={cancelLogin}
+                    onAddressSelect={(id) => void selectAddress(id)}
+                    onAddressRetry={() => void retryAddresses()}
                   />
                 </JourneyOriginSurface>
               </div>

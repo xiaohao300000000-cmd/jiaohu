@@ -33,6 +33,13 @@ describe("Pupu login preflight", () => {
       if (url.endsWith("/status")) return Response.json({ phase: "auth_required" });
       if (url.endsWith("/start")) return Response.json({ phase: "sms", attemptId: "attempt-1" });
       if (url.endsWith("/verify")) return Response.json({ phase: "connected" });
+      if (url === "/api/pupu/addresses") return Response.json({
+        addresses: [{ id: "receiver-a", label: "地址 1", region: "已保存区域",
+          detailHint: "3 栋 1201", phoneSuffix: "" }],
+      });
+      if (url === "/api/pupu/addresses/select") {
+        return Response.json({ selected: true, addressId: "receiver-a" });
+      }
       if (url === "/api/chat") {
         const body = JSON.parse(String(init?.body));
         return ready(body.requestId);
@@ -53,10 +60,16 @@ describe("Pupu login preflight", () => {
     });
 
     await act(async () => result.current.submitLoginCode("123456"));
+    expect(result.current.snapshot.presentation).toMatchObject({
+      component: "pupu.address", payload: { phase: "choose" },
+    });
+    expect(calls.filter((url) => url === "/api/chat")).toHaveLength(0);
+
+    await act(async () => result.current.selectAddress("receiver-a"));
     await waitFor(() => expect(result.current.snapshot.state).toBe("ready"));
     expect(calls.filter((url) => url === "/api/chat")).toHaveLength(1);
 
-    await act(async () => result.current.submitLoginCode("123456"));
+    await act(async () => result.current.selectAddress("receiver-a"));
     expect(calls.filter((url) => url === "/api/chat")).toHaveLength(1);
   });
 });

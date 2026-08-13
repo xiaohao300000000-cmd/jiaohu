@@ -3,6 +3,7 @@ import { LiquidJourney } from "./LiquidJourney";
 import type { JourneyPresentation, JourneySnapshot } from "./types";
 import { PupuPurchaseCard } from "../pupu/PupuPurchaseCard";
 import { PupuLoginJourney } from "../pupu/PupuLoginJourney";
+import { PupuAddressJourney } from "../pupu/PupuAddressJourney";
 
 type PupuPresentation = Extract<
   JourneyPresentation,
@@ -39,6 +40,8 @@ interface JourneyPresentationRendererProps {
   onLoginCaptchaComplete?: () => void;
   onLoginResend?: () => void;
   onLoginCancel?: () => void;
+  onAddressSelect?: (receiverId: string) => void;
+  onAddressRetry?: () => void;
 }
 
 export function JourneyPresentationRenderer({
@@ -49,6 +52,8 @@ export function JourneyPresentationRenderer({
   onLoginCaptchaComplete,
   onLoginResend,
   onLoginCancel,
+  onAddressSelect,
+  onAddressRetry,
 }: JourneyPresentationRendererProps) {
   const presentation = snapshot.presentation;
   if (presentation?.component === "pupu.login") {
@@ -61,6 +66,17 @@ export function JourneyPresentationRenderer({
         onCaptchaComplete={onLoginCaptchaComplete}
         onResend={onLoginResend}
         onCancel={onLoginCancel}
+      />
+    );
+  }
+  if (presentation?.component === "pupu.address") {
+    return (
+      <PupuAddressJourney
+        instanceId={snapshot.activeRequestId || "idle"}
+        phase={presentation.payload.phase}
+        addresses={presentation.payload.addresses}
+        onSelect={onAddressSelect}
+        onRetry={onAddressRetry}
       />
     );
   }

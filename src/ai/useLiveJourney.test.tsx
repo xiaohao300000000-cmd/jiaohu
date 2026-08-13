@@ -116,6 +116,15 @@ describe("useLiveJourney", () => {
       if (url === "/api/pupu/login/status") {
         return Response.json({ phase: "connected" });
       }
+      if (url === "/api/pupu/addresses") {
+        return Response.json({ addresses: [{
+          id: "receiver-a", label: "地址 1", region: "已保存区域",
+          detailHint: "3 栋 1201", phoneSuffix: "",
+        }] });
+      }
+      if (url === "/api/pupu/addresses/select") {
+        return Response.json({ selected: true, addressId: "receiver-a" });
+      }
       const body = JSON.parse(String(init?.body));
       return streamResponse(body.requestId, { includePupu: true });
     });
@@ -123,6 +132,9 @@ describe("useLiveJourney", () => {
 
     await act(async () => {
       await result.current.submit("买牛奶");
+    });
+    await act(async () => {
+      await result.current.selectAddress("receiver-a");
     });
 
     await waitFor(() =>
