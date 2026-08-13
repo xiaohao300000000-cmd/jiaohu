@@ -61,6 +61,28 @@ def test_run_pupu_uses_consumed_ticket_scope(tmp_path, monkeypatch):
     assert argv[argv.index("--store-id") + 1] == "store-a"
     assert argv[argv.index("--place-id") + 1] == "place-a"
     assert argv[argv.index("--receiver-id") + 1] == "receiver-a"
+    assert argv[1:3] == ["catalog", "scoped-search"]
+
+
+def test_run_pupu_scopes_catalog_detail_to_selected_store(tmp_path, monkeypatch):
+    write_ticket(tmp_path, "journey-detail")
+    monkeypatch.setenv("PUPU_SCOPE_TICKET_DIR", str(tmp_path))
+    runner = RecordingRunner()
+    result = json.loads(run_pupu(
+        "catalog.detail",
+        {
+            "store_product_id": "store-product-a",
+            "product_id": "product-a",
+            "_trusted_task_id": "journey-detail",
+        },
+        runner=runner,
+    ))
+    assert result["ok"] is True
+    argv = runner.calls[0][0]
+    assert argv[1:3] == ["catalog", "scoped-detail"]
+    assert argv[argv.index("--store-id") + 1] == "store-a"
+    assert argv[argv.index("--place-id") + 1] == "place-a"
+    assert argv[argv.index("--receiver-id") + 1] == "receiver-a"
 
 
 def test_run_pupu_fails_closed_before_cli_when_ticket_missing(tmp_path, monkeypatch):

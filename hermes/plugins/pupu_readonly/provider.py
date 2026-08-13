@@ -140,13 +140,14 @@ def build_argv(operation: str, arguments: dict[str, object]) -> list[str]:
     command, action = operation.split(".", 1)
     argv = [cli_path, command, action]
     if operation == "catalog.search":
-        argv[1:3] = ["catalog", "scoped-search"]
+        trusted_scope = arguments.get("_trusted_scope")
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv[1:3] = ["catalog", "scoped-search"]
         argv.extend(["--query", _required_text(arguments, "query")])
         size = arguments.get("size", 5)
         if not isinstance(size, int) or isinstance(size, bool) or not 1 <= size <= 50:
             raise ValueError("size must be an integer from 1 to 50")
         argv.extend(["--size", str(size)])
-        trusted_scope = arguments.get("_trusted_scope")
         if isinstance(trusted_scope, TrustedPupuScope):
             argv.extend([
                 "--store-id", trusted_scope.store_id,
@@ -154,6 +155,9 @@ def build_argv(operation: str, arguments: dict[str, object]) -> list[str]:
                 "--receiver-id", trusted_scope.receiver_id,
             ])
     elif operation == "catalog.detail":
+        trusted_scope = arguments.get("_trusted_scope")
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv[1:3] = ["catalog", "scoped-detail"]
         argv.extend(
             [
                 "--store-product-id",
@@ -162,6 +166,13 @@ def build_argv(operation: str, arguments: dict[str, object]) -> list[str]:
                 _required_text(arguments, "product_id"),
             ]
         )
+        trusted_scope = arguments.get("_trusted_scope")
+        if isinstance(trusted_scope, TrustedPupuScope):
+            argv.extend([
+                "--store-id", trusted_scope.store_id,
+                "--place-id", trusted_scope.place_id,
+                "--receiver-id", trusted_scope.receiver_id,
+            ])
 
     _append_shared_scope(argv, arguments)
     return [*argv, "--json"]

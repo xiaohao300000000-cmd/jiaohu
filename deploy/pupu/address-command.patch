@@ -19,7 +19,7 @@
 @@ -273,6 +275,55 @@
      )
      return executor, auth
- 
+
 +def _login_account_executor(
 +    *, account_id: str, accounts_root: Path, data_root: Path,
 +):
@@ -72,10 +72,107 @@
  def _catalog_service(
      *,
      household_id: str,
-@@ -685,6 +736,31 @@
+@@ -662,6 +713,96 @@
      )
- 
- 
+
+
++@catalog_app.command("scoped-search")
++def catalog_scoped_search(
++    query: str = typer.Option(..., "--query"),
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    page: int = typer.Option(1, "--page", min=1),
++    size: int = typer.Option(20, "--size", min=1, max=50),
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Search live products for a trusted login-account address binding."""
++    del json_output, place_id, receiver_id
++    root = data_root or _data_root_default()
++
++    async def execute():
++        from pupu_assistant.integrations.pupu.account_service import PupuAccountService
++        from pupu_assistant.integrations.pupu.address_command import access_token_expired
++        from pupu_assistant.integrations.pupu.catalog_service import PupuCatalogService
++
++        executor, paths, auth = _login_account_executor(
++            account_id=account_id, accounts_root=accounts_root, data_root=root,
++        )
++        if access_token_expired(auth):
++            await PupuAccountService(
++                executor, auth_path=paths.auth_path, config=auth,
++            ).refresh()
++            executor, _, _ = _login_account_executor(
++                account_id=account_id, accounts_root=accounts_root, data_root=root,
++            )
++        return await PupuCatalogService(
++            executor, store_id=store_id,
++        ).search(query, page=page, size=size)
++
++    _run_agent_command(
++        operation="pupu.catalog.search",
++        request_id=request_id,
++        household_id=account_id,
++        action=execute,
++        next_actions=("pupu.catalog.detail",),
++    )
++
++
++@catalog_app.command("scoped-detail")
++def catalog_scoped_detail(
++    store_product_id: str = typer.Option(..., "--store-product-id"),
++    product_id: str = typer.Option(..., "--product-id"),
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    store_id: str = typer.Option(..., "--store-id"),
++    place_id: str = typer.Option(..., "--place-id"),
++    receiver_id: str = typer.Option(..., "--receiver-id"),
++    request_id: str = typer.Option(..., "--request-id"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """Read a live product for a trusted login-account address binding."""
++    del json_output, store_id, place_id, receiver_id
++    root = data_root or _data_root_default()
++
++    async def execute():
++        from pupu_assistant.integrations.pupu.account_service import PupuAccountService
++        from pupu_assistant.integrations.pupu.address_command import access_token_expired
++        from pupu_assistant.integrations.pupu.catalog_service import PupuCatalogService
++
++        executor, paths, auth = _login_account_executor(
++            account_id=account_id, accounts_root=accounts_root, data_root=root,
++        )
++        if access_token_expired(auth):
++            await PupuAccountService(
++                executor, auth_path=paths.auth_path, config=auth,
++            ).refresh()
++            executor, _, _ = _login_account_executor(
++                account_id=account_id, accounts_root=accounts_root, data_root=root,
++            )
++        return await PupuCatalogService(
++            executor, store_id=store_id,
++        ).detail(store_product_id, product_id=product_id)
++
++    _run_agent_command(
++        operation="pupu.catalog.detail",
++        request_id=request_id,
++        household_id=account_id,
++        action=execute,
++    )
++
++
+ @catalog_app.command("detail")
+ def catalog_detail(
+     store_product_id: str = typer.Option(..., "--store-product-id"),
+@@ -685,6 +826,31 @@
+     )
+
+
 +@address_app.command("list")
 +def address_list(
 +    account_id: str = typer.Option(..., "--account-id"),
