@@ -38,7 +38,7 @@ describe("Hermes deployment contract", () => {
     expect(installer).toContain('hermes_home="/home/pupu/.hermes"');
     expect(installer).toContain('plugins/pupu_readonly"');
     expect(installer).toContain("hermes/plugins/pupu_readonly");
-    expect(installer).toContain('ensure_env_entry "PUPU_TOOL_TIMEOUT_SECONDS" "75"');
+    expect(installer).toContain('ensure_env_entry "PUPU_TOOL_TIMEOUT_SECONDS" "150"');
     expect(installer).toContain('ensure_env_entry "PUPU_ACCOUNTS_ROOT"');
     expect(installer).toContain('ensure_env_entry "PUPU_SCOPE_TICKET_DIR"');
     expect(installer).toContain('install -d -m 700');

@@ -95,14 +95,17 @@ describe("useLiveJourney", () => {
 
     let submission: Promise<void>;
     act(() => {
-      submission = result.current.submit("帮我找牛奶");
+      submission = result.current.submit("帮我整理今天的待办");
     });
 
     expect(result.current.snapshot.state).toBe("receiving");
-    expect(result.current.snapshot.requestText).toBe("帮我找牛奶");
+    expect(result.current.snapshot.requestText).toBe("帮我整理今天的待办");
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const [fetchInput, fetchInit] = fetchMock.mock.calls[0];
+    const body = fetchInput instanceof Request
+      ? await fetchInput.clone().json() as { requestId: string }
+      : JSON.parse(String(fetchInit?.body)) as { requestId: string };
     const requestId = body.requestId;
     resolveFetch?.(streamResponse(requestId));
     await act(async () => submission);
