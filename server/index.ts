@@ -15,6 +15,7 @@ import { handlePupuAddressRequest } from "./pupu/address-router";
 import { PupuCartController } from "./pupu/cart-controller";
 import { handlePupuCommerceRequest } from "./pupu/commerce-router";
 import { PupuCheckoutController } from "./pupu/checkout-controller";
+import { TaskCoordinator } from "./tasks/task-coordinator";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
@@ -36,6 +37,7 @@ const scopeTickets = new PupuScopeTicketStore({
 const addressController = new PupuAddressController();
 const cartController = new PupuCartController();
 const checkoutController = new PupuCheckoutController();
+const taskCoordinator = new TaskCoordinator();
 
 function requestHeaders(
   headers: express.Request["headers"],
@@ -92,11 +94,18 @@ app.post(
     try {
       await sendWebResponse(
         await handleChatRequest(request, {
+          taskCoordinator,
+          getPupuReadiness: async (source) => {
+            const token = readPupuSessionCookie(source.headers.get("cookie"));
+            const session = await sessionStore.lookup(token);
+            if (!session) return "awaiting_login";
+            const selection = addressController.getSelection(session.accountId);
+            return selection ? "ready" : "awaiting_address";
+          },
           preparePupuScope: async (source, sessionId) => {
             const token = readPupuSessionCookie(source.headers.get("cookie"));
-            if (!token) throw new Error("Pupu browser session is required");
-            const session = await sessionStore.resolve(token);
-            if (session.created) throw new Error("Pupu browser session is invalid");
+            const session = await sessionStore.lookup(token);
+            if (!session) throw new Error("Pupu browser session is required");
             const selection = addressController.getSelection(session.accountId);
             if (!selection) throw new Error("Pupu delivery address selection is required");
             await scopeTickets.issue({
@@ -113,8 +122,8 @@ app.post(
           registerPupuPlan: async (_sessionId, runId, products) => {
             const token = readPupuSessionCookie(request.headers.get("cookie"));
             if (!token) return;
-            const session = await sessionStore.resolve(token);
-            if (session.created) return;
+            const session = await sessionStore.lookup(token);
+            if (!session) return;
             const selection = addressController.getSelection(session.accountId);
             if (!selection) return;
             cartController.registerPlan(session.accountId, runId, selection, products);

@@ -1,9 +1,19 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PupuSessionStore } from "./session-store";
 
+  it("checks an existing token without creating a replacement session", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "pupu-session-lookup-"));
+    const store = new PupuSessionStore({
+      root: join(parent, "sessions"),
+      accountsRoot: join(parent, "accounts"),
+    });
+
+    expect(await store.lookup("invalid-token")).toBeNull();
+    expect(await readdir(parent)).toEqual([]);
+  });
 describe("PupuSessionStore", () => {
   it("persists an opaque session without storing a phone", async () => {
     const root = await mkdtemp(join(tmpdir(), "pupu-session-"));

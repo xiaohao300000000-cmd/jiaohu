@@ -19,8 +19,7 @@ describe("chat Pupu scope lifecycle", () => {
       headers: { "content-type": "application/json", cookie: "pupu_session=opaque" },
       body: JSON.stringify({
         requestId: "journey-scope-1",
-        pupuIntent: true,
-        messages: [{ role: "user", parts: [{ type: "text", text: "find milk" }] }],
+        messages: [{ role: "user", parts: [{ type: "text", text: "帮我找牛奶" }] }],
       }),
     });
     const response = await handleChatRequest(request, {

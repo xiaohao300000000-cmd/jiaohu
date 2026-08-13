@@ -5,15 +5,24 @@ import {
   type HermesRunEvent,
 } from "../src/ai/hermes-event-adapter";
 import type { JourneyUIMessage } from "../src/ai/journey-ui-message";
+import type { ProductSummary } from "../src/components/agent/agent-ui-event";
+import type { JourneyPresentation } from "../src/components/journey/types";
+import type { TaskSnapshot } from "../src/domain/task-contract";
 import { getHermesConfig } from "./config";
 import { createHermesRun, streamHermesRun } from "./hermes-client";
+import { buildHermesTaskContract } from "./tasks/hermes-task-contract";
+import { TaskConflictError, TaskCoordinator } from "./tasks/task-coordinator";
 import {
   readToolArtifact,
   type ToolArtifactIdentity,
   type ToolArtifactReadResult,
 } from "./tool-artifact";
 
+export type PupuReadiness = "ready" | "awaiting_login" | "awaiting_address";
+
 interface ChatDependencies {
+  taskCoordinator?: TaskCoordinator;
+  getPupuReadiness?: (request: Request) => Promise<PupuReadiness>;
   createRun?: (
     input: string,
     sessionId: string,
@@ -27,41 +36,21 @@ interface ChatDependencies {
     identity: ToolArtifactIdentity,
   ) => Promise<ToolArtifactReadResult>;
   createId?: () => string;
-  preparePupuScope?: (request: Request, sessionId: string, input: string) => Promise<void>;
+  preparePupuScope?: (
+    request: Request,
+    sessionId: string,
+    task: TaskSnapshot,
+  ) => Promise<void>;
   cleanupPupuScope?: (sessionId: string) => Promise<void>;
-  registerPupuPlan?: (sessionId: string, runId: string, products: import("../src/components/agent/agent-ui-event").ProductSummary[]) => void;
+  registerPupuPlan?: (
+    sessionId: string,
+    runId: string,
+    products: ProductSummary[],
+    task: TaskSnapshot,
+  ) => void | Promise<void>;
 }
 
-function isComplexMealRequest(input: string): boolean {
-  return /(?:低脂|三道菜|营养全面|晚餐|做.*菜)/.test(input);
-}
-function hermesInput(input: string, pupuIntent: boolean): string {
-  if (!pupuIntent) return input;
-  if (!isComplexMealRequest(input)) {
-    const cartRead = /购物车|购车/.test(input);
-    return [
-      input,
-      "",
-      "[LIQUIDJOURNEY_EXECUTION_CONTRACT]",
-      "The browser has already completed Pupu login and delivery-address verification.",
-      cartRead
-        ? "Call pupu_read_cart exactly once."
-        : "Call pupu_search_catalog exactly once using the product request above.",
-      "Do not call pupu_auth_status or pupu_capabilities.",
-      "After the tool result, answer only from the returned live data.",
-    ].join("\n");
-  }
-  return [
-    input,
-    "",
-    "[LIQUIDJOURNEY_EXECUTION_CONTRACT]",
-    "This is a Pupu meal-shopping request.",
-    "Call pupu_search_meal_catalog exactly once with queries for lean protein, vegetables, and tofu or another core ingredient.",
-    "Do not call pupu_search_catalog, pupu_read_cart, pupu_auth_status, or pupu_capabilities.",
-    "After the tool result, produce exactly three simple low-fat dishes grounded in returned in-stock SKUs, with nutrition coverage and substitutions.",
-    "Never return a prose-only or zero-price plan.",
-  ].join("\n");
-}
+const defaultTaskCoordinator = new TaskCoordinator();
 
 function extractInput(body: unknown): string | null {
   if (
@@ -96,6 +85,67 @@ function extractInput(body: unknown): string | null {
   return text || null;
 }
 
+function stringField(body: unknown, field: string): string | undefined {
+  if (
+    body !== null &&
+    typeof body === "object" &&
+    field in body &&
+    typeof (body as Record<string, unknown>)[field] === "string"
+  ) {
+    const value = (body as Record<string, string>)[field].trim();
+    return value || undefined;
+  }
+  return undefined;
+}
+
+function booleanField(body: unknown, field: string): boolean {
+  return Boolean(
+    body !== null &&
+      typeof body === "object" &&
+      field in body &&
+      (body as Record<string, unknown>)[field] === true,
+  );
+}
+
+function needsPupu(task: TaskSnapshot): boolean {
+  return task.domain === "commerce" && task.requestedCapabilities.some(
+    (capability) =>
+      capability === "commerce.catalog.search" ||
+      capability === "commerce.catalog.meal-search" ||
+      capability === "commerce.cart.read",
+  );
+}
+
+function readinessPresentation(readiness: Exclude<PupuReadiness, "ready">): JourneyPresentation {
+  if (readiness === "awaiting_login") {
+    return {
+      capability: "pupu",
+      component: "pupu.login",
+      mode: "anchored",
+      dataSource: "live",
+      payload: { phase: "phone" },
+    };
+  }
+  return {
+    capability: "pupu",
+    component: "pupu.address",
+    mode: "anchored",
+    dataSource: "live",
+    payload: { phase: "loading", addresses: [] },
+  };
+}
+
+function taskProducts(products: ProductSummary[]) {
+  return products.map((product) => ({
+    productId: product.productId,
+    providerProductId: product.providerProductId,
+    name: product.name,
+    quantity: product.quantity,
+    unitPriceCents: Math.round(product.unitPrice * 100),
+    source: "pupu_live" as const,
+  }));
+}
+
 export async function handleChatRequest(
   request: Request,
   dependencies: ChatDependencies = {},
@@ -114,22 +164,28 @@ export async function handleChatRequest(
     );
   }
 
-  const requestedId =
-    body !== null &&
-    typeof body === "object" &&
-    "requestId" in body &&
-    typeof (body as { requestId: unknown }).requestId === "string"
-      ? (body as { requestId: string }).requestId
-      : null;
+  const requestedId = stringField(body, "requestId");
   const sessionId =
     requestedId && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(requestedId)
       ? requestedId
       : dependencies.createId?.() || `journey-${crypto.randomUUID()}`;
-  const pupuIntent =
-    body !== null &&
-    typeof body === "object" &&
-    "pupuIntent" in body &&
-    (body as { pupuIntent?: unknown }).pupuIntent === true;
+  const taskCoordinator = dependencies.taskCoordinator ?? defaultTaskCoordinator;
+  const taskId = stringField(body, "taskId");
+  let task: TaskSnapshot;
+  try {
+    task = booleanField(body, "resume") && taskId
+      ? taskCoordinator.resume(taskId)
+      : taskCoordinator.resolve({ input, taskId });
+  } catch (error) {
+    if (error instanceof TaskConflictError) {
+      return Response.json(
+        { error: { code: "task_conflict", message: error.message } },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
+
   const config = getHermesConfig();
   const createRun =
     dependencies.createRun ||
@@ -145,13 +201,47 @@ export async function handleChatRequest(
     execute: async ({ writer }) => {
       let scopePrepared = false;
       try {
-        if (pupuIntent && dependencies.preparePupuScope) {
-          await dependencies.preparePupuScope(request, sessionId, input);
-          scopePrepared = true;
+        if (needsPupu(task)) {
+          const readiness = await (dependencies.getPupuReadiness?.(request) ?? Promise.resolve("ready"));
+          if (readiness === "ready" &&
+              (task.phase === "awaiting_login" || task.phase === "awaiting_address")) {
+            task = taskCoordinator.transition(task.taskId, task.version, "searching_catalog");
+          } else if (readiness !== "ready" && task.phase !== readiness) {
+            task = taskCoordinator.transition(task.taskId, task.version, readiness);
+          }
+          writer.write({
+            type: "data-journey",
+            data: { type: "task.updated", requestId: sessionId, task },
+          });
+          if (readiness !== "ready") {
+            writer.write({
+              type: "data-journey",
+              data: {
+                type: "presentation.updated",
+                requestId: sessionId,
+                presentation: readinessPresentation(readiness),
+              },
+            });
+            return;
+          }
+          if (dependencies.preparePupuScope) {
+            await dependencies.preparePupuScope(request, sessionId, task);
+            scopePrepared = true;
+          }
+        } else {
+          writer.write({
+            type: "data-journey",
+            data: { type: "task.updated", requestId: sessionId, task },
+          });
         }
-        const { runId } = await createRun(hermesInput(input, pupuIntent), sessionId, request.signal);
+
+        const { runId } = await createRun(
+          buildHermesTaskContract(task),
+          sessionId,
+          request.signal,
+        );
         writer.write({ type: "message-metadata", messageMetadata: { runId } });
-        const context = createHermesEventContext(sessionId, input, runId);
+        const context = createHermesEventContext(sessionId, task.requestText, runId);
         const started = mapHermesEvent(
           { type: "run.started", run_id: runId },
           context,
@@ -185,8 +275,28 @@ export async function handleChatRequest(
             };
           }
           const mapped = mapHermesEvent(event, context);
-          if (event.type === "run.completed" && dependencies.registerPupuPlan && context.products.length > 0) {
-            dependencies.registerPupuPlan(sessionId, runId, context.products);
+          if (
+            event.type === "run.completed" &&
+            context.products.length > 0 &&
+            task.allowedCapabilities.some((capability) =>
+              capability === "commerce.catalog.search" ||
+              capability === "commerce.catalog.meal-search")
+          ) {
+            task = taskCoordinator.attachProducts(
+              task.taskId,
+              task.version,
+              taskProducts(context.products),
+            );
+            writer.write({
+              type: "data-journey",
+              data: { type: "task.updated", requestId: sessionId, task },
+            });
+            await dependencies.registerPupuPlan?.(
+              sessionId,
+              runId,
+              context.products,
+              task,
+            );
           }
           if (!mapped) continue;
           writer.write({ type: "data-journey", data: mapped });
@@ -194,8 +304,7 @@ export async function handleChatRequest(
       } catch (error) {
         if (request.signal.aborted) return;
         throw error;
-      }
-      finally {
+      } finally {
         if (scopePrepared && dependencies.cleanupPupuScope) {
           await dependencies.cleanupPupuScope(sessionId);
         }

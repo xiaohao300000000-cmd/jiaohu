@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { HermesRunEvent } from "../src/ai/hermes-event-adapter";
 import type { ToolArtifactIdentity } from "./tool-artifact";
 import { handleChatRequest } from "./chat-handler";
+import { TaskCoordinator } from "./tasks/task-coordinator";
 
 const liveEnvelope = {
   schema_version: "1",
@@ -111,7 +112,7 @@ describe("handleChatRequest", () => {
     expect(body).toContain('"dataSource":"live"');
     expect(body).not.toMatch(/authorization|cookie|reasoning_content|secret/i);
     expect(createRun).toHaveBeenCalledWith(
-      "帮我找牛奶",
+      expect.stringContaining("Call pupu_search_catalog exactly once"),
       "journey-client-1",
       expect.any(AbortSignal),
     );
@@ -197,6 +198,139 @@ describe("handleChatRequest", () => {
     expect(prompt).toContain("Do not call pupu_auth_status or pupu_capabilities");
   });
 
+  it("routes commerce from server task state without accepting pupuIntent", async () => {
+    const coordinator = new TaskCoordinator({ createId: () => "task-route-1" });
+    const createRun = vi.fn(async (_input: string) => ({ runId: "run-1" }));
+    const preparePupuScope = vi.fn(async () => undefined);
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: "journey-route-1",
+        pupuIntent: false,
+        messages: [{ role: "user", parts: [{ type: "text", text: "帮我找牛奶" }] }],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+
+    const response = await handleChatRequest(request, {
+      taskCoordinator: coordinator,
+      getPupuReadiness: async () => "ready",
+      preparePupuScope,
+      createRun,
+      streamRun: () => events(),
+      readToolArtifact: async () => ({ status: "ok" as const, result: liveEnvelope }),
+    });
+    const body = await response.text();
+
+    expect(body).toContain('"type":"task.updated"');
+    expect(body).toContain('"taskId":"task-route-1"');
+    expect(preparePupuScope).toHaveBeenCalledWith(
+      request,
+      "journey-route-1",
+      expect.objectContaining({ taskId: "task-route-1", phase: "searching_catalog" }),
+    );
+    expect(createRun.mock.calls[0]?.[0]).toContain("Call pupu_search_catalog exactly once");
+  });
+
+  it("ignores a client pupuIntent flag for ordinary advice", async () => {
+    const createRun = vi.fn(async () => ({ runId: "run-1" }));
+    const preparePupuScope = vi.fn(async () => undefined);
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: "journey-advice-1",
+        pupuIntent: true,
+        messages: [{ role: "user", parts: [{ type: "text", text: "写一句问候" }] }],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+
+    const response = await handleChatRequest(request, {
+      taskCoordinator: new TaskCoordinator({ createId: () => "task-advice-1" }),
+      getPupuReadiness: async () => "ready",
+      preparePupuScope,
+      createRun,
+      streamRun: () => events(),
+      readToolArtifact: async () => ({ status: "missing" }),
+    });
+    await response.text();
+
+    expect(preparePupuScope).not.toHaveBeenCalled();
+    expect(createRun).toHaveBeenCalledWith(
+      "写一句问候",
+      "journey-advice-1",
+      expect.any(AbortSignal),
+    );
+  });
+
+  it.each([
+    ["awaiting_login", "pupu.login"],
+    ["awaiting_address", "pupu.address"],
+  ] as const)("stops before Hermes when readiness is %s", async (readiness, component) => {
+    const createRun = vi.fn(async () => ({ runId: "never" }));
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: `journey-${readiness}`,
+        messages: [{ role: "user", parts: [{ type: "text", text: "帮我找牛奶" }] }],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+    const response = await handleChatRequest(request, {
+      taskCoordinator: new TaskCoordinator({ createId: () => `task-${readiness}` }),
+      getPupuReadiness: async () => readiness,
+      createRun,
+      streamRun: () => events(),
+    });
+    const body = await response.text();
+
+    expect(createRun).not.toHaveBeenCalled();
+    expect(body).toContain(`"component":"${component}"`);
+    expect(body).toContain(`"phase":"${readiness}"`);
+  });
+
+  it("resumes the same task after readiness changes without reclassification", async () => {
+    const coordinator = new TaskCoordinator({ createId: () => "task-resume-1" });
+    const firstRequest = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: "journey-resume-1",
+        messages: [{ role: "user", parts: [{ type: "text", text: "帮我找牛奶" }] }],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+    const first = await handleChatRequest(firstRequest, {
+      taskCoordinator: coordinator,
+      getPupuReadiness: async () => "awaiting_login",
+      createRun: async () => ({ runId: "never" }),
+      streamRun: () => events(),
+    });
+    expect(await first.text()).toContain('"taskId":"task-resume-1"');
+
+    const createRun = vi.fn(async (_input: string) => ({ runId: "run-1" }));
+    const secondRequest = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        requestId: "journey-resume-2",
+        taskId: "task-resume-1",
+        resume: true,
+        messages: [{ role: "user", parts: [{ type: "text", text: "这条文本不应重新分类" }] }],
+      }),
+      headers: { "content-type": "application/json" },
+    });
+    const second = await handleChatRequest(secondRequest, {
+      taskCoordinator: coordinator,
+      getPupuReadiness: async () => "ready",
+      preparePupuScope: async () => undefined,
+      createRun,
+      streamRun: () => events(),
+      readToolArtifact: async () => ({ status: "ok" as const, result: liveEnvelope }),
+    });
+    const body = await second.text();
+
+    expect(body).toContain('"taskId":"task-resume-1"');
+    expect(createRun.mock.calls[0]?.[0]).toContain("帮我找牛奶");
+  });
   it("returns a safe typed error for an invalid request", async () => {
     const request = new Request("http://localhost/api/chat", {
       method: "POST",

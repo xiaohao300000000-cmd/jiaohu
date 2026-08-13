@@ -62,6 +62,11 @@ export class PupuSessionStore {
     }
   }
 
+  async lookup(candidate?: string): Promise<ResolvedPupuSession | null> {
+    if (!candidate) return null;
+    return this.read(candidate);
+  }
+
   async resolve(candidate?: string): Promise<ResolvedPupuSession> {
     await ensurePrivateDirectory(this.options.root);
     await ensurePrivateDirectory(this.options.accountsRoot);
