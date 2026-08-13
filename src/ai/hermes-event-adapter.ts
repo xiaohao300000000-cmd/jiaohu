@@ -143,13 +143,14 @@ function toProduct(input: z.infer<typeof normalizedSkuSchema>): ProductSummary {
   };
 }
 
-function selectedMealProducts(
+export function selectMealProducts(
   products: ProductSummary[],
   summary?: string,
 ): ProductSummary[] {
   if (!summary) return products;
   const primaryPlan = summary.split(/替换方案|可替换项|一个说明/)[0];
   const selected = products.filter((product) => primaryPlan.includes(product.name));
+  if (/(?:第一道|三道菜)/.test(summary)) return selected.length === 3 ? selected : [];
   return selected.length > 0 ? selected : products;
 }
 
@@ -157,7 +158,7 @@ function journeyResult(
   products: ProductSummary[],
   summary?: string,
 ): JourneyResult {
-  products = selectedMealProducts(products, summary);
+  products = selectMealProducts(products, summary);
   const totalAmount = products.reduce(
     (sum, product) => sum + product.unitPrice * product.quantity,
     0,
