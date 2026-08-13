@@ -255,6 +255,29 @@ describe("mapHermesEvent", () => {
     expect(
       mapHermesEvent(
         {
+          type: "tool.started",
+          run_id: runId,
+          tool_name: "pupu_capabilities",
+          tool_call_id: "late-capabilities",
+        },
+        context,
+      ),
+    ).toBeNull();
+    expect(
+      mapHermesEvent(
+        {
+          type: "tool.completed",
+          run_id: runId,
+          tool_name: "pupu_capabilities",
+          tool_call_id: "late-capabilities",
+          output: { ignored: true },
+        },
+        context,
+      ),
+    ).toBeNull();
+    expect(
+      mapHermesEvent(
+        {
           type: "run.completed",
           run_id: runId,
           output: { summary: "provider failure must not become ready" },

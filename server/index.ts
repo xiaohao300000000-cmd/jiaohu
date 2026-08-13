@@ -15,7 +15,6 @@ import { handlePupuAddressRequest } from "./pupu/address-router";
 import { PupuCartController } from "./pupu/cart-controller";
 import { handlePupuCommerceRequest } from "./pupu/commerce-router";
 import { PupuCheckoutController } from "./pupu/checkout-controller";
-import { isPupuRequest } from "./pupu/request-classifier";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
@@ -93,10 +92,7 @@ app.post(
     try {
       await sendWebResponse(
         await handleChatRequest(request, {
-          preparePupuScope: async (source, sessionId, input) => {
-            if (!isPupuRequest(input)) {
-              return;
-            }
+          preparePupuScope: async (source, sessionId) => {
             const token = readPupuSessionCookie(source.headers.get("cookie"));
             if (!token) throw new Error("Pupu browser session is required");
             const session = await sessionStore.resolve(token);
