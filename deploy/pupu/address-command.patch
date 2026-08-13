@@ -1,0 +1,259 @@
+--- a/src/pupu_assistant/entrypoints/cli/main.py
++++ b/src/pupu_assistant/entrypoints/cli/main.py
+@@ -27,6 +27,7 @@
+ product_app = typer.Typer(help="Product-domain planning commands.")
+ account_app = typer.Typer(help="Authenticated Pupu account read commands.")
+ catalog_app = typer.Typer(help="Live Pupu catalog commands for agent callers.")
++address_app = typer.Typer(help="Scoped saved Pupu delivery-address commands.")
+ recipe_app = typer.Typer(help="Recipe to SKU resolution commands.")
+ cart_app = typer.Typer(help="Cart preview and safety commands.")
+ coupon_app = typer.Typer(help="Coupon/filler optimization commands.")
+@@ -39,6 +40,7 @@
+ invite_pay_app = typer.Typer(help="Official Pupu invite-pay read commands.")
+ app.add_typer(product_app, name="product")
+ app.add_typer(account_app, name="account")
++app.add_typer(address_app, name="address")
+ app.add_typer(catalog_app, name="catalog")
+ app.add_typer(recipe_app, name="recipe")
+ app.add_typer(cart_app, name="cart")
+@@ -273,6 +275,55 @@
+     )
+     return executor, auth
+ 
++def _login_account_executor(
++    *, account_id: str, accounts_root: Path, data_root: Path,
++):
++    from pupu_assistant.integrations.pupu.account_gateway import HouseholdOperationExecutor
++    from pupu_assistant.integrations.pupu.login_accounts import login_account_paths
++    from pupu_assistant.integrations.pupu.network_executor import PupuNetworkExecutor
++
++    paths = login_account_paths(account_id=account_id, root=accounts_root)
++    if not paths.auth_path.exists():
++        raise ValueError("verified Pupu login is required")
++    auth = json.loads(paths.auth_path.read_text(encoding="utf-8-sig"))
++    if not isinstance(auth, dict):
++        raise ValueError("saved Pupu auth is invalid")
++    network = PupuNetworkExecutor(config=auth, repo_root=_repo_root())
++    return (
++        HouseholdOperationExecutor(
++            household_id=account_id, data_root=data_root, send=network,
++            allowed_risks={"read_only", "account_session"},
++        ),
++        paths,
++        auth,
++    )
++
++async def _list_login_account_addresses(
++    *, account_id: str, accounts_root: Path, data_root: Path, lng_x: str, lat_y: str,
++) -> dict[str, object]:
++    from pupu_assistant.integrations.pupu.account_service import PupuAccountService
++    from pupu_assistant.integrations.pupu.address_command import (
++        access_token_expired,
++        summarize_receiver_addresses,
++    )
++    from pupu_assistant.integrations.pupu.operations import build_operation_request
++
++    executor, paths, auth = _login_account_executor(
++        account_id=account_id, accounts_root=accounts_root, data_root=data_root,
++    )
++    if access_token_expired(auth):
++        await PupuAccountService(
++            executor, auth_path=paths.auth_path, config=auth,
++        ).refresh()
++        executor, _, _ = _login_account_executor(
++            account_id=account_id, accounts_root=accounts_root, data_root=data_root,
++        )
++    response = await executor(build_operation_request(
++        "receiver-list", {"receiver": {"lng_x": lng_x, "lat_y": lat_y}},
++    ))
++    return summarize_receiver_addresses(response)
++
++
+ def _catalog_service(
+     *,
+     household_id: str,
+@@ -685,6 +736,31 @@
+     )
+ 
+ 
++@address_app.command("list")
++def address_list(
++    account_id: str = typer.Option(..., "--account-id"),
++    accounts_root: Path = typer.Option(..., "--accounts-root"),
++    data_root: Annotated[Path | None, typer.Option("--data-root")] = None,
++    request_id: str | None = typer.Option(None, "--request-id"),
++    json_output: bool = typer.Option(False, "--json"),
++) -> None:
++    """List redacted saved addresses for one verified login account."""
++    del json_output
++    root = data_root or _data_root_default()
++    _run_agent_command(
++        operation="pupu.address.list",
++        request_id=request_id or str(uuid4()),
++        household_id=account_id,
++        action=lambda: _list_login_account_addresses(
++            account_id=account_id,
++            accounts_root=accounts_root,
++            data_root=root,
++            lng_x=os.environ.get("PUPU_DEFAULT_LNG_X", "119.2965"),
++            lat_y=os.environ.get("PUPU_DEFAULT_LAT_Y", "26.0745"),
++        ),
++    )
++
++
+ @approval_app.command("issue")
+ def approval_issue(
+     payload: Annotated[Path, typer.Option("--payload")],
+--- a/src/pupu_assistant/integrations/pupu/address_command.py
++++ b/src/pupu_assistant/integrations/pupu/address_command.py
+@@ -0,0 +1,73 @@
++from __future__ import annotations
++
++import base64
++import json
++import time
++from collections.abc import Mapping
++from typing import Any
++
++def _mapping(value: Any) -> Mapping[str, Any]:
++    return value if isinstance(value, Mapping) else {}
++
++
++def access_token_expired(
++    config: Mapping[str, Any],
++    *,
++    now_seconds: int | None = None,
++    skew_seconds: int = 30,
++) -> bool:
++    authorization = _text(_mapping(config.get("headers")).get("authorization"))
++    token = authorization.split()[-1] if authorization else ""
++    parts = token.split(".")
++    if len(parts) != 3:
++        return True
++    try:
++        raw = parts[1] + "=" * (-len(parts[1]) % 4)
++        claims = json.loads(base64.urlsafe_b64decode(raw))
++        expires_at = int(claims["exp"])
++    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
++        return True
++    active_now = int(time.time()) if now_seconds is None else now_seconds
++    return expires_at <= active_now + skew_seconds
++
++def _text(value: Any) -> str:
++    return str(value).strip() if value not in (None, "") else ""
++
++def _candidates(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
++    data = _mapping(payload.get("data")) or payload
++    result: list[Mapping[str, Any]] = []
++    for key in ("recommend_receiver_list", "normal_receiver_list"):
++        values = data.get(key)
++        if isinstance(values, list):
++            result.extend(value for value in values if isinstance(value, Mapping))
++    return result
++
++def summarize_receiver_addresses(payload: Mapping[str, Any]) -> dict[str, object]:
++    addresses: list[dict[str, object]] = []
++    seen: set[str] = set()
++    for receiver in _candidates(payload):
++        receiver_id = _text(receiver.get("id"))
++        place = _mapping(receiver.get("place"))
++        store_id = _text(receiver.get("service_store_id") or place.get("service_store_id"))
++        place_id = _text(place.get("id"))
++        try:
++            place_zip = int(place.get("zip"))
++        except (TypeError, ValueError):
++            continue
++        if not receiver_id or not store_id or not place_id or place_zip <= 0:
++            continue
++        if receiver_id in seen:
++            continue
++        seen.add(receiver_id)
++        city = _text(receiver.get("city_name"))
++        area = _text(receiver.get("area_name"))
++        addresses.append({
++            "id": receiver_id,
++            "label": f"地址 {len(addresses) + 1}",
++            "region": f"{city}{area}" or "已保存区域",
++            "detailHint": _text(receiver.get("building_room_num")) or "详细地址已保护",
++            "phoneSuffix": "",
++            "service_store_id": store_id,
++            "place": {"id": place_id, "zip": place_zip},
++        })
++    return {"addresses": addresses}
+--- a/tests/test_address_command.py
++++ b/tests/test_address_command.py
+@@ -0,0 +1,74 @@
++from pupu_assistant.integrations.pupu.address_command import access_token_expired, summarize_receiver_addresses
++
++
++def test_summarizes_receiver_list_without_sensitive_fields():
++    payload = {
++        "data": {
++            "recommend_receiver_list": [{
++                "id": "receiver-a",
++                "name": "家",
++                "city_name": "福州市",
++                "area_name": "鼓楼区",
++                "address": "测试路 88 号",
++                "building_room_num": "3 栋 1201",
++                "mobile": "13000009501",
++                "service_store_id": "store-a",
++                "place": {"id": "place-a", "zip": 350100},
++                "lng_x": "encrypted-longitude",
++                "lat_y": "encrypted-latitude",
++            }],
++            "normal_receiver_list": [],
++        }
++    }
++
++    result = summarize_receiver_addresses(payload)
++
++    assert result == {"addresses": [{
++        "id": "receiver-a",
++        "label": "地址 1",
++        "region": "福州市鼓楼区",
++        "detailHint": "3 栋 1201",
++        "phoneSuffix": "",
++        "service_store_id": "store-a",
++        "place": {"id": "place-a", "zip": 350100},
++    }]}
++    serialized = repr(result)
++    assert "测试路" not in serialized
++    assert "13000009501" not in serialized
++    assert "encrypted-" not in serialized
++
++
++def test_deduplicates_recommended_and_normal_receivers():
++    receiver = {
++        "id": "receiver-a",
++        "service_store_id": "store-a",
++        "place": {"id": "place-a", "zip": 350100},
++    }
++    result = summarize_receiver_addresses({"data": {
++        "recommend_receiver_list": [receiver],
++        "normal_receiver_list": [receiver],
++    }})
++    assert len(result["addresses"]) == 1
++
++
++def test_rejects_incomplete_receiver_bindings():
++    result = summarize_receiver_addresses({"data": {
++        "normal_receiver_list": [{"id": "receiver-a"}],
++    }})
++    assert result == {"addresses": []}
++
++def test_detects_expired_access_token_without_exposing_it():
++    import base64
++    import json
++
++    def jwt(exp):
++        body = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
++        return f"header.{body}.signature"
++
++    assert access_token_expired({"headers": {
++        "authorization": f"Bearer {jwt(100)}",
++    }}, now_seconds=101)
++    assert not access_token_expired({"headers": {
++        "authorization": f"Bearer {jwt(200)}",
++    }}, now_seconds=101)
++

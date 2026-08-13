@@ -10,6 +10,8 @@ import { PupuLoginController } from "./pupu/login-controller";
 import { handlePupuLoginRequest } from "./pupu/login-router";
 import { PupuScopeTicketStore } from "./pupu/scope-ticket";
 import { readPupuSessionCookie } from "./pupu/http-security";
+import { PupuAddressController } from "./pupu/address-controller";
+import { handlePupuAddressRequest } from "./pupu/address-router";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
@@ -28,6 +30,7 @@ const scopeTickets = new PupuScopeTicketStore({
   root: join(loginConfig.runtimeRoot, "scope-tickets"),
   ttlMs: 120_000,
 });
+const addressController = new PupuAddressController();
 
 function requestHeaders(
   headers: express.Request["headers"],
@@ -160,6 +163,41 @@ app.use(
       }
     } finally {
       stopWatching();
+    }
+  },
+);
+
+app.use(
+  "/api/pupu/addresses",
+  express.raw({ type: () => true, limit: "64kb" }),
+  async (req, res) => {
+    const method = req.method.toUpperCase();
+    const request = new Request(
+      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
+      {
+        method,
+        headers: requestHeaders(req.headers),
+        body: method === "GET" || method === "HEAD" ? undefined : req.body,
+      },
+    );
+    try {
+      await sendWebResponse(
+        await handlePupuAddressRequest(request, {
+          sessionStore,
+          controller: addressController,
+          config: loginConfig,
+        }),
+        res,
+      );
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).json({
+          error: {
+            code: "address_unavailable",
+            message: "暂时无法读取已保存地址，请稍后重试。",
+          },
+        });
+      }
     }
   },
 );
