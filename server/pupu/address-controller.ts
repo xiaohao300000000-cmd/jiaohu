@@ -18,6 +18,7 @@ function isUsable(address: ProviderAddress): boolean {
 export class PupuAddressController {
   private readonly execute: typeof executeCommerceCommand;
   private readonly addresses = new Map<string, Map<string, ProviderAddress>>();
+  private readonly selections = new Map<string, AddressSelection>();
   constructor(options: Options = {}) { this.execute = options.execute || executeCommerceCommand }
   async list(scope: PupuCommerceScope): Promise<{ addresses: SavedAddressSummary[] }> {
     const result: CommerceProviderResult = await this.execute(scope, { kind: "listAddresses" });
@@ -31,9 +32,14 @@ export class PupuAddressController {
   async select(scope: PupuCommerceScope, receiverId: string): Promise<AddressSelection> {
     const address = this.addresses.get(scope.accountId)?.get(receiverId);
     if (!address || !isUsable(address)) throw new Error("Saved address is not available for this account");
-    return {
+    const selection = {
       receiverId: address.id, storeId: address.service_store_id,
       placeId: address.place.id, placeZip: address.place.zip,
     };
+    this.selections.set(scope.accountId, selection);
+    return selection;
+  }
+  getSelection(accountId: string): AddressSelection | undefined {
+    return this.selections.get(accountId);
   }
 }

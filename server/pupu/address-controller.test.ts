@@ -30,6 +30,9 @@ describe("PupuAddressController", () => {
     expect(await controller.select(scope, "receiver-a")).toMatchObject({
       receiverId: "receiver-a", storeId: "store-a", placeId: "place-a", placeZip: 350100,
     });
+    expect(controller.getSelection(scope.accountId)).toMatchObject({
+      receiverId: "receiver-a", storeId: "store-a", placeId: "place-a",
+    });
     await expect(controller.select(scope, "receiver-other")).rejects.toThrow("address");
   });
 

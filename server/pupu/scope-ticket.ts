@@ -10,6 +10,9 @@ export interface PupuScopeTicketInput {
   accountId: string;
   accountsRoot: string;
   dataRoot: string;
+  receiverId?: string;
+  storeId?: string;
+  placeId?: string;
 }
 
 interface Options {
@@ -33,7 +36,10 @@ export class PupuScopeTicketStore {
       !SAFE_ID.test(input.sessionId) ||
       !ACCOUNT.test(input.accountId) ||
       !isAbsolute(input.accountsRoot) ||
-      !isAbsolute(input.dataRoot)
+      !isAbsolute(input.dataRoot) ||
+      (input.receiverId !== undefined && !SAFE_ID.test(input.receiverId)) ||
+      (input.storeId !== undefined && !SAFE_ID.test(input.storeId)) ||
+      (input.placeId !== undefined && !SAFE_ID.test(input.placeId))
     ) {
       throw new Error("unsafe Pupu scope ticket");
     }

@@ -61,5 +61,6 @@ describe("Pupu address router", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ selected: true, addressId: "receiver-a" });
+    expect(controller.select).toHaveBeenCalledWith(expect.objectContaining({ accountId: session.accountId }), "receiver-a");
   });
 });

@@ -22,6 +22,9 @@ class TrustedPupuScope:
     account_id: str
     accounts_root: Path
     data_root: Path
+    receiver_id: str
+    store_id: str
+    place_id: str
 
 
 def _absolute(value: object, name: str) -> Path:
@@ -79,6 +82,13 @@ def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
             raise ScopeTicketError("scope ticket account is invalid")
         accounts_root = _absolute(value.get("accountsRoot"), "accounts root")
         data_root = _absolute(value.get("dataRoot"), "data root")
+        receiver_id = value.get("receiverId")
+        store_id = value.get("storeId")
+        place_id = value.get("placeId")
+        if not all(isinstance(item, str) and SAFE_ID.fullmatch(item) for item in (
+            receiver_id, store_id, place_id,
+        )):
+            raise ScopeTicketError("scope ticket address binding is invalid")
         _expires_at(value.get("expiresAt"))
         nonce = value.get("nonce")
         if not isinstance(nonce, str) or not NONCE.fullmatch(nonce):
@@ -94,6 +104,9 @@ def consume_scope_ticket(root: Path, task_id: str) -> TrustedPupuScope:
             account_id=account_id,
             accounts_root=accounts_root,
             data_root=data_root,
+            receiver_id=receiver_id,
+            store_id=store_id,
+            place_id=place_id,
         )
     finally:
         if not valid:

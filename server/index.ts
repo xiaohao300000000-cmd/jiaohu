@@ -95,11 +95,16 @@ app.post(
             if (!token) throw new Error("Pupu browser session is required");
             const session = await sessionStore.resolve(token);
             if (session.created) throw new Error("Pupu browser session is invalid");
+            const selection = addressController.getSelection(session.accountId);
+            if (!selection) throw new Error("Pupu delivery address selection is required");
             await scopeTickets.issue({
               sessionId,
               accountId: session.accountId,
               accountsRoot: loginConfig.accountsRoot,
               dataRoot: loginConfig.dataRoot,
+              receiverId: selection.receiverId,
+              storeId: selection.storeId,
+              placeId: selection.placeId,
             });
           },
           cleanupPupuScope: (sessionId) => scopeTickets.remove(sessionId),

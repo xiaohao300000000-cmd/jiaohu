@@ -13,11 +13,14 @@ describe("PupuScopeTicketStore", () => {
       accountId: "acct_0123456789abcdef0123456789abcdef",
       accountsRoot: "/srv/accounts",
       dataRoot: "/srv/data",
+      receiverId: "receiver-a",
+      storeId: "store-a",
+      placeId: "place-a",
     });
     const raw = await readFile(issued.path, "utf8");
     const value = JSON.parse(raw);
 
-    expect(value).toMatchObject({ version: 1, sessionId: "journey-1" });
+    expect(value).toMatchObject({ version: 1, sessionId: "journey-1", receiverId: "receiver-a", storeId: "store-a", placeId: "place-a" });
     expect(value.expiresAt).toBe(new Date(61_000).toISOString());
     expect(raw).not.toMatch(/phone|token|cookie|authorization/i);
     expect((await stat(root)).mode & 0o777).toBe(0o700);

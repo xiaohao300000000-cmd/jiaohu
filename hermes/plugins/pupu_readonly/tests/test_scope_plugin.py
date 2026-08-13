@@ -12,6 +12,9 @@ def write_ticket(root: Path, task_id: str):
         "accountId": "acct_0123456789abcdef0123456789abcdef",
         "accountsRoot": "/srv/accounts",
         "dataRoot": "/srv/data",
+        "receiverId": "receiver-a",
+        "storeId": "store-a",
+        "placeId": "place-a",
         "expiresAt": "2999-01-01T00:00:00.000Z",
         "nonce": "abcdef0123456789abcdef0123456789",
     }
@@ -55,6 +58,9 @@ def test_run_pupu_uses_consumed_ticket_scope(tmp_path, monkeypatch):
     assert argv[argv.index("--account-id") + 1].startswith("acct_")
     assert argv[argv.index("--accounts-root") + 1] == "/srv/accounts"
     assert argv[argv.index("--data-root") + 1] == "/srv/data"
+    assert argv[argv.index("--store-id") + 1] == "store-a"
+    assert argv[argv.index("--place-id") + 1] == "place-a"
+    assert argv[argv.index("--receiver-id") + 1] == "receiver-a"
 
 
 def test_run_pupu_fails_closed_before_cli_when_ticket_missing(tmp_path, monkeypatch):
