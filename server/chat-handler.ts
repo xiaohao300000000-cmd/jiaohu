@@ -12,6 +12,7 @@ import { getHermesConfig } from "./config";
 import { createHermesRun, streamHermesRun } from "./hermes-client";
 import { buildHermesTaskContract } from "./tasks/hermes-task-contract";
 import { submitFinalPlanSchema } from "./tasks/final-plan";
+import type { TaskAgent } from "./agents/task-agent";
 import { TaskConflictError } from "./tasks/task-coordinator";
 import type { TaskApplicationService } from "./tasks/task-application-service";
 import {
@@ -23,6 +24,7 @@ import {
 export type PupuReadiness = "ready" | "awaiting_login" | "awaiting_address";
 
 interface ChatDependencies {
+  taskAgent?: TaskAgent;
   taskService?: Pick<TaskApplicationService, "resolve" | "get" | "transition"> & {
     startRun?: TaskApplicationService["startRun"];
     storeCandidates?: TaskApplicationService["storeCandidates"];
@@ -210,17 +212,26 @@ export async function handleChatRequest(
     requestedId && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(requestedId)
       ? requestedId
       : dependencies.createId?.() || `journey-${crypto.randomUUID()}`;
-  if (!dependencies.taskService) {
-    throw new Error("taskService is required");
+  if (!dependencies.taskService || !dependencies.taskAgent) {
+    throw new Error("taskService and taskAgent are required");
   }
   const taskService = dependencies.taskService;
+  const taskAgent = dependencies.taskAgent;
   const ownerId = dependencies.ownerId ?? "test-owner";
   const taskId = stringField(body, "taskId");
   let task: TaskSnapshot;
   try {
-    task = booleanField(body, "resume") && taskId
-      ? await taskService.get(ownerId, taskId)
-      : await taskService.resolve({ ownerId, input, taskId });
+    if (booleanField(body, "resume") && taskId) {
+      task = await taskService.get(ownerId, taskId);
+    } else {
+      const current = taskId
+        ? await taskService.get(ownerId, taskId)
+        : undefined;
+      const proposal = await taskAgent.propose({
+        input, current, signal: request.signal,
+      });
+      task = await taskService.resolve({ ownerId, input, taskId, proposal });
+    }
   } catch (error) {
     if (error instanceof TaskConflictError) {
       return Response.json(

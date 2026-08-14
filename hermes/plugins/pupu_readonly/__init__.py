@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from .provider import persist_run_result, run_pupu
-from .final_plan import add_candidate_ids, submit_final_plan
+from .final_plan import add_candidate_ids, submit_final_plan, submit_task_proposal
 
 TOOLSET = "pupu_readonly"
 
@@ -90,6 +90,60 @@ TOOL_DEFINITIONS = [
 
 
 def register(ctx: Any) -> None:
+    proposal_schema = _schema(
+        "submit_task_proposal",
+        "Submit the Agent's structured task interpretation.",
+        {
+            "operation": {
+                "type": "string",
+                "enum": ["start", "continue", "research", "revise"],
+            },
+            "domain": {
+                "type": "string",
+                "enum": [
+                    "general", "commerce", "delivery",
+                    "home_automation", "calendar",
+                ],
+            },
+            "goal": {
+                "type": "string",
+                "enum": [
+                    "advice", "find_products", "revise_plan",
+                    "prepare_cart", "create_order",
+                ],
+            },
+            "requestedCapabilities": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 8,
+            },
+            "contextPatch": {
+                "type": "object",
+                "properties": {
+                    "peopleCount": {"type": "integer", "minimum": 1, "maximum": 100},
+                    "budgetCents": {"type": "integer", "minimum": 0},
+                    "dietaryRequirements": {
+                        "type": "array", "items": {"type": "string"},
+                    },
+                    "requirementsToAdd": {
+                        "type": "array", "items": {"type": "string"},
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+        [
+            "operation", "domain", "goal",
+            "requestedCapabilities", "contextPatch",
+        ],
+    )
+    ctx.register_tool(
+        name="submit_task_proposal",
+        toolset=TOOLSET,
+        schema=proposal_schema,
+        handler=submit_task_proposal,
+        description=proposal_schema["description"],
+    )
     final_schema = _schema(
         "submit_final_plan",
         "Submit the one authoritative structured product plan.",

@@ -29,6 +29,8 @@ describe("central task routing architecture", () => {
       "utf8",
     );
     expect(source).not.toMatch(/new Map/);
+    expect(source).not.toMatch(/classify|contextFrom|COMMERCE_PATTERN|REVISION_PATTERN/);
+    expect(source).toContain("TaskProposal");
     expect(source).not.toMatch(
       /from ["'](?:pg|\.\.\/db|\.\/task-repository)/,
     );

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TaskSnapshot } from "../../src/domain/task-contract";
 import { TaskCoordinator } from "./task-coordinator";
+import { testProposal } from "./task-test-helper";
 
 function existingTask(): TaskSnapshot {
   return {
@@ -41,8 +42,8 @@ describe("pure TaskCoordinator rules", () => {
     const taskId = "11111111-1111-4111-8111-111111111111";
     const input = "4个人今晚做低脂三道菜，预算150元，不要太辣";
 
-    const first = coordinator.resolveNewTask(taskId, input);
-    const second = coordinator.resolveNewTask(taskId, input);
+    const first = coordinator.acceptNewTask(taskId, input, testProposal(input));
+    const second = coordinator.acceptNewTask(taskId, input, testProposal(input));
 
     expect(second).toEqual(first);
     expect(first.next).toMatchObject({
@@ -62,9 +63,10 @@ describe("pure TaskCoordinator rules", () => {
   });
 
   it("grants actual search and submit capabilities for a re-search", () => {
-    const decision = new TaskCoordinator().resolveContinuation(
+    const decision = new TaskCoordinator().acceptProposal(
       existingTask(),
       "不要牛奶，重新搜豆奶",
+      testProposal("不要牛奶，重新搜豆奶", existingTask()),
     );
 
     expect(decision).toMatchObject({
@@ -88,9 +90,10 @@ describe("pure TaskCoordinator rules", () => {
   });
 
   it("allows quantity-only edits to submit without provider search", () => {
-    const decision = new TaskCoordinator().resolveContinuation(
+    const decision = new TaskCoordinator().acceptProposal(
       existingTask(),
       "鲜牛奶改成2瓶",
+      testProposal("鲜牛奶改成2瓶", existingTask()),
     );
 
     expect(decision).toMatchObject({

@@ -8,6 +8,7 @@ import {
   deterministicCandidateId,
   submitFinalPlanSchema,
 } from "./final-plan";
+import { testProposal } from "./task-test-helper";
 import { PostgresTaskRepository } from "./task-repository";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -49,7 +50,7 @@ describeDb("authoritative FinalPlan", () => {
       new TaskCoordinator(),
       () => "50000000-0000-4000-8000-000000000001",
     );
-    const task = await service.resolve({ ownerId: "owner-a", input: "买牛奶" });
+    const task = await service.resolve({ ownerId: "owner-a", input: "买牛奶", proposal: testProposal("买牛奶") });
     await service.startRun({
       ownerId: "owner-a",
       taskId: task.taskId,

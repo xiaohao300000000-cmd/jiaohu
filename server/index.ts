@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { createServer as createViteServer } from "vite";
 import { handleChatRequest } from "./chat-handler";
 import { getHermesConfig, getPupuLoginConfig } from "./config";
-import { stopHermesRun } from "./hermes-client";
+import { createHermesRun, stopHermesRun, streamHermesRun } from "./hermes-client";
+import { readToolArtifact } from "./tool-artifact";
+import { HermesTaskAgent } from "./agents/task-agent";
 import { abortOnClientDisconnect } from "./request-lifecycle";
 import { PupuSessionStore } from "./pupu/session-store";
 import { PupuLoginController } from "./pupu/login-controller";
@@ -47,6 +49,14 @@ const cartController = new PupuCartController();
 const checkoutController = new PupuCheckoutController();
 const databasePool = createDatabasePool(getDatabaseConfig());
 await migrate(databasePool, join(process.cwd(), "server/db/migrations"));
+const taskAgentConfig = getHermesConfig();
+const taskAgent = new HermesTaskAgent({
+  createRun: (input, sessionId, signal) =>
+    createHermesRun(input, sessionId, taskAgentConfig, fetch, signal),
+  streamRun: (runId, signal) =>
+    streamHermesRun(runId, taskAgentConfig, signal),
+  readToolArtifact,
+});
 const taskService = new TaskApplicationService(
   databasePool,
   new PostgresTaskRepository(),
@@ -110,6 +120,7 @@ app.post(
       const owner = resolveTaskOwner(request);
       const chatResponse = await handleChatRequest(request, {
           taskService,
+          taskAgent,
           ownerId: owner.ownerId,
           getPupuReadiness: async (source, currentTask) => {
             const token = readPupuSessionCookie(source.headers.get("cookie"));

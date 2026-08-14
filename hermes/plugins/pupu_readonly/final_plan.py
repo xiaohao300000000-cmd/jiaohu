@@ -112,3 +112,54 @@ def submit_final_plan(params: Any, **kwargs: Any) -> str:
             tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
         )
     return result
+
+
+class TaskContextPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    peopleCount: int | None = Field(default=None, ge=1, le=100)
+    budgetCents: int | None = Field(default=None, ge=0)
+    dietaryRequirements: list[str] | None = Field(default=None, max_length=30)
+    requirementsToAdd: list[str] | None = Field(default=None, max_length=30)
+
+
+class TaskProposalSubmission(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operation: str
+    domain: str
+    goal: str
+    requestedCapabilities: list[str] = Field(max_length=8)
+    contextPatch: TaskContextPatch
+
+
+def submit_task_proposal(params: Any, **kwargs: Any) -> str:
+    session_id = kwargs.get("task_id")
+    run_id = kwargs.get("run_id")
+    tool_call_id = kwargs.get("tool_call_id")
+    if not isinstance(session_id, str) or not isinstance(run_id, str):
+        raise ValueError("trusted task agent run identity is missing")
+    try:
+        proposal = TaskProposalSubmission.model_validate(params or {})
+    except ValidationError as exc:
+        raise ValueError("invalid task proposal") from exc
+    envelope = {
+        "schema_version": "1",
+        "ok": True,
+        "operation": "task.proposal.submit",
+        "request_id": str(uuid4()),
+        "household_id": None,
+        "status": "succeeded",
+        "data": {"proposal": proposal.model_dump(mode="json", exclude_none=True)},
+        "error": None,
+        "next_actions": [],
+        "evidence_ref": None,
+    }
+    result = json.dumps(envelope, ensure_ascii=False)
+    if os.environ.get("PUPU_RESULT_DIR"):
+        persist_run_result(
+            result,
+            task_id=session_id,
+            tool_name="submit_task_proposal",
+            run_id=run_id,
+            tool_call_id=tool_call_id if isinstance(tool_call_id, str) else None,
+        )
+    return result

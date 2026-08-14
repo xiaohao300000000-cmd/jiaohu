@@ -22,6 +22,7 @@ def test_registers_only_read_only_tools():
         "pupu_get_product",
         "pupu_read_cart",
         "submit_final_plan",
+        "submit_task_proposal",
     }
     assert all(tool["toolset"] == "pupu_readonly" for tool in context.tools)
     assert all(callable(tool["handler"]) for tool in context.tools)
@@ -51,7 +52,7 @@ def test_handlers_delegate_only_to_expected_operations(monkeypatch):
     register(context)
 
     for tool in context.tools:
-        if tool["name"] != "submit_final_plan":
+        if tool["name"] not in {"submit_final_plan", "submit_task_proposal"}:
             tool["handler"]({}, task_id="ignored")
 
     assert [operation for operation, _ in calls] == [

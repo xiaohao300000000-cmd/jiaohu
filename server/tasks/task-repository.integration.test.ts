@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { migrate } from "../db/migrate";
 import { withTransaction } from "../db/transaction";
 import { TaskCoordinator, TaskConflictError } from "./task-coordinator";
+import { testProposal } from "./task-test-helper";
 import {
   PostgresTaskRepository,
   TaskNotFoundError,
@@ -31,9 +32,10 @@ describeDb("PostgresTaskRepository", () => {
 
   it("survives a repository and pool boundary", async () => {
     const rules = new TaskCoordinator();
-    const initial = rules.resolveNewTask(
+    const initial = rules.acceptNewTask(
       "10000000-0000-4000-8000-000000000001",
       "4个人低脂晚餐，预算150元",
+      testProposal("4个人低脂晚餐，预算150元"),
     ).next;
     const repositoryA = new PostgresTaskRepository();
 
@@ -53,14 +55,15 @@ describeDb("PostgresTaskRepository", () => {
   it("allows only one compare-and-swap write", async () => {
     const rules = new TaskCoordinator();
     const repository = new PostgresTaskRepository();
-    const initial = rules.resolveNewTask(
+    const initial = rules.acceptNewTask(
       "10000000-0000-4000-8000-000000000002",
       "买牛奶",
+      testProposal("买牛奶"),
     ).next;
     const created = await withTransaction(poolA!, (client) =>
       repository.create(client, "owner-a", initial));
-    const decisionA = rules.resolveContinuation(created, "预算改成50元");
-    const decisionB = rules.resolveContinuation(created, "预算改成60元");
+    const decisionA = rules.acceptProposal(created, "预算改成50元", testProposal("预算改成50元", created));
+    const decisionB = rules.acceptProposal(created, "预算改成60元", testProposal("预算改成60元", created));
 
     const outcomes = await Promise.allSettled([
       withTransaction(poolA!, (client) =>
@@ -88,9 +91,10 @@ describeDb("PostgresTaskRepository", () => {
   });
 
   it("does not reveal another owner's task", async () => {
-    const initial = new TaskCoordinator().resolveNewTask(
+    const initial = new TaskCoordinator().acceptNewTask(
       "10000000-0000-4000-8000-000000000003",
       "买牛奶",
+      testProposal("买牛奶"),
     ).next;
     const repository = new PostgresTaskRepository();
     await withTransaction(poolA!, (client) =>

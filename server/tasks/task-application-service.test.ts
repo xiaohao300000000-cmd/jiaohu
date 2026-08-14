@@ -4,6 +4,7 @@ import { migrate } from "../db/migrate";
 import { createDatabasePool } from "../db/pool";
 import { TaskApplicationService } from "./task-application-service";
 import { TaskConflictError, TaskCoordinator } from "./task-coordinator";
+import { testProposal } from "./task-test-helper";
 import { PostgresTaskRepository, TaskNotFoundError } from "./task-repository";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -33,11 +34,13 @@ describeDb("TaskApplicationService", () => {
     const created = await service.resolve({
       ownerId: "owner-a",
       input: "4个人低脂晚餐，预算150元",
+      proposal: testProposal("4个人低脂晚餐，预算150元"),
     });
     const changed = await service.resolve({
       ownerId: "owner-a",
       taskId: created.taskId,
       input: "预算改成120元",
+      proposal: testProposal("预算改成120元", created),
     });
     const loaded = await service.get("owner-a", created.taskId);
 
@@ -56,7 +59,7 @@ describeDb("TaskApplicationService", () => {
       new PostgresTaskRepository(),
       new TaskCoordinator(),
     );
-    const created = await service.resolve({ ownerId: "owner-a", input: "买牛奶" });
+    const created = await service.resolve({ ownerId: "owner-a", input: "买牛奶", proposal: testProposal("买牛奶") });
 
     await expect(service.get("owner-b", created.taskId))
       .rejects.toBeInstanceOf(TaskNotFoundError);
@@ -71,6 +74,7 @@ describeDb("TaskApplicationService", () => {
     const created = await service.resolve({
       ownerId: "owner-a",
       input: "买牛奶",
+      proposal: testProposal("买牛奶"),
     });
     const bound = await service.bindAddress({
       ownerId: "owner-a",

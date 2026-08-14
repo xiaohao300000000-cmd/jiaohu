@@ -74,6 +74,30 @@ async function* consecutiveEvents(): AsyncGenerator<HermesRunEvent> {
   };
 }
 
+function testTaskAgent() {
+  return {
+    propose: async ({ input, current }: {
+      input: string;
+      current?: ReturnType<InMemoryTaskStore["resume"]>;
+    }) => {
+      const commerce = /买|找|搜|牛奶|购物车/u.test(input) ||
+        current?.domain === "commerce";
+      const cartRead = /购物车/u.test(input);
+      return {
+        operation: current ? "continue" as const : "start" as const,
+        domain: commerce ? "commerce" as const : "general" as const,
+        goal: commerce && !cartRead ? "find_products" as const : "advice" as const,
+        requestedCapabilities: cartRead
+          ? ["commerce.cart.read" as const]
+          : commerce
+            ? ["commerce.catalog.search" as const]
+            : [],
+        contextPatch: { requirementsToAdd: [input] },
+      };
+    },
+  };
+}
+
 function testTaskService(
   store = new InMemoryTaskStore(),
 ) {
@@ -122,6 +146,7 @@ describe("handleChatRequest", () => {
       result: liveEnvelope,
     }));
     const response = await handleChatRequest(request, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(),
       createRun,
       streamRun: () => events(),
@@ -172,6 +197,7 @@ describe("handleChatRequest", () => {
     }));
 
     const response = await handleChatRequest(request, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(),
       createRun: async () => ({ runId: "run-1" }),
       streamRun: () => consecutiveEvents(),
@@ -210,6 +236,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const response = await handleChatRequest(request, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(),
       preparePupuScope: async () => undefined,
       createRun,
@@ -241,6 +268,7 @@ describe("handleChatRequest", () => {
     });
 
     const response = await handleChatRequest(request, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(coordinator),
       getPupuReadiness: async () => "ready",
       preparePupuScope,
@@ -274,6 +302,7 @@ describe("handleChatRequest", () => {
     });
 
     const response = await handleChatRequest(request, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(new InMemoryTaskStore({ createId: () => "task-advice-1" })),
       getPupuReadiness: async () => "ready",
       preparePupuScope,
@@ -305,6 +334,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const response = await handleChatRequest(request, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(new InMemoryTaskStore({ createId: () => `task-${readiness}` })),
       getPupuReadiness: async () => readiness,
       createRun,
@@ -328,6 +358,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const first = await handleChatRequest(firstRequest, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(coordinator),
       getPupuReadiness: async () => "awaiting_login",
       createRun: async () => ({ runId: "never" }),
@@ -347,6 +378,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const second = await handleChatRequest(secondRequest, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(coordinator),
       getPupuReadiness: async () => "ready",
       preparePupuScope: async () => undefined,
@@ -367,6 +399,7 @@ describe("handleChatRequest", () => {
     });
 
     const response = await handleChatRequest(request, {
+      taskAgent: testTaskAgent(),
       taskService: testTaskService(),
       createRun: async () => ({ runId: "never" }),
       streamRun: () => events(),
@@ -448,6 +481,7 @@ describe("handleChatRequest", () => {
         }),
       }),
       {
+        taskAgent: testTaskAgent(),
         taskService: {
           ...base,
           startRun: vi.fn(async () => undefined),

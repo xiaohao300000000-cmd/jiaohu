@@ -16,12 +16,14 @@ export class TaskApplicationService {
     ownerId: string;
     input: string;
     taskId?: string;
+    proposal: import("./task-proposal").TaskProposal;
   }): Promise<TaskSnapshot> {
     return withTransaction(this.pool, async (client) => {
       if (!command.taskId) {
-        const decision = this.coordinator.resolveNewTask(
+        const decision = this.coordinator.acceptNewTask(
           this.createId(),
           command.input,
+          command.proposal,
         );
         return this.repository.create(
           client,
@@ -35,9 +37,10 @@ export class TaskApplicationService {
         command.ownerId,
         command.taskId,
       );
-      const decision = this.coordinator.resolveContinuation(
+      const decision = this.coordinator.acceptProposal(
         current,
         command.input,
+        command.proposal,
       );
       return this.repository.applyDecision(
         client,
