@@ -4,8 +4,7 @@ import type { createPupuCommerceClient } from "../../ai/pupu-commerce-client";
 import type { TaskSnapshot } from "../../domain/task-contract";
 
 export interface CheckoutPreview {
-  previewId: string;
-  version: number;
+  confirmationId: string;
   addressHint: string;
   lines: Array<{ name: string; quantity: number; priceCents: number }>;
   productTotalCents: number;
@@ -64,7 +63,7 @@ export function PupuCheckoutJourney({
     try {
       const result = await commerce.createInvitePay(
         { taskId: task.taskId, version: task.version },
-        { previewId: preview.previewId, version: preview.version },
+        preview.confirmationId,
       );
       setPayment(result);
       setTask(result.task);

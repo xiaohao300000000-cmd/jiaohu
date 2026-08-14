@@ -1,4 +1,3 @@
-import type { ProductSummary } from "../components/agent/agent-ui-event";
 import type { TaskSnapshot } from "../domain/task-contract";
 
 export interface CommerceTaskIdentity {
@@ -9,11 +8,12 @@ export interface CommerceTaskIdentity {
 interface TaskResult {
   task: TaskSnapshot;
 }
+
 export interface CartPreview extends TaskResult {
-  previewId: string;
-  version: number;
+  confirmationId: string;
   totalCents: number;
 }
+
 export interface CartCommitResult extends TaskResult {
   status: string;
 }
@@ -33,30 +33,25 @@ export function createPupuCommerceClient(fetchImpl: typeof fetch = fetch) {
         ...body,
       }),
     });
-    const value = await response.json() as T & { error?: { message?: string } };
+    const value = await response.json() as T & {
+      error?: { message?: string };
+    };
     if (!response.ok) {
-      throw new Error(value.error?.message || "Pupu commerce request failed");
+      throw new Error(
+        value.error?.message || "Pupu commerce request failed",
+      );
     }
     return value;
   }
 
   return {
-    previewCart: (
-      task: CommerceTaskIdentity,
-      planId: string,
-      products: ProductSummary[],
-    ) => post<CartPreview>("/api/pupu/cart/preview", task, {
-      planId,
-      items: products.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-      })),
-    }),
+    previewCart: (task: CommerceTaskIdentity) =>
+      post<CartPreview>("/api/pupu/cart/preview", task, {}),
     commitCart: (
       task: CommerceTaskIdentity,
-      preview: Pick<CartPreview, "previewId" | "version">,
+      confirmationId: string,
     ) => post<CartCommitResult>("/api/pupu/cart/commit", task, {
-      ...preview,
+      confirmationId,
       idempotencyKey: `cart-${crypto.randomUUID()}`,
     }),
     previewCheckout: (task: CommerceTaskIdentity) =>
@@ -66,12 +61,12 @@ export function createPupuCommerceClient(fetchImpl: typeof fetch = fetch) {
       >("/api/pupu/checkout/preview", task, {}),
     createInvitePay: (
       task: CommerceTaskIdentity,
-      preview: { previewId: string; version: number },
+      confirmationId: string,
     ) => post<
       import("../components/pupu/PupuCheckoutJourney").PaymentPresentation &
-      TaskResult
+        TaskResult
     >("/api/pupu/checkout/create-invite-pay", task, {
-      ...preview,
+      confirmationId,
       idempotencyKey: `order-${crypto.randomUUID()}`,
     }),
   };

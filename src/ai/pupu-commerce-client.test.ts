@@ -7,13 +7,15 @@ const task = {
 } as const;
 
 describe("createPupuCommerceClient", () => {
-  it("sends the task identity with every commerce operation", async () => {
-    const bodies: Array<Record<string, unknown>> = [];
-    const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
-      bodies.push(JSON.parse(String(init?.body)));
+  it("sends identity-only preview and confirmation requests", async () => {
+    const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      requests.push({
+        path: String(input),
+        body: JSON.parse(String(init?.body)),
+      });
       return Response.json({
-        previewId: "preview-a",
-        version: 1,
+        confirmationId: "confirmation-a",
         totalCents: 1290,
         task: { ...task, version: 8 },
         status: "verified",
@@ -30,26 +32,44 @@ describe("createPupuCommerceClient", () => {
     });
     const client = createPupuCommerceClient(fetcher);
 
-    await client.previewCart(task, "run-a", [{
-      productId: "sku-a",
-      name: "牛奶",
-      specification: "950ml",
-      unitPrice: 12.9,
-      quantity: 1,
-      currency: "CNY",
-      stockStatus: "in_stock",
-      collectedAt: "2026-08-14T00:00:00.000Z",
-    }]);
-    await client.commitCart(task, { previewId: "cart-a", version: 1 });
+    await client.previewCart(task);
+    await client.commitCart(task, "cart-confirmation");
     await client.previewCheckout(task);
-    await client.createInvitePay(task, { previewId: "checkout-a", version: 1 });
+    await client.createInvitePay(task, "checkout-confirmation");
 
-    expect(bodies).toHaveLength(4);
-    expect(bodies).toEqual(expect.arrayContaining([
-      expect.objectContaining({ taskId: "task-client-1", taskVersion: 7 }),
-    ]));
-    expect(bodies.every((body) =>
-      body.taskId === task.taskId && body.taskVersion === task.version,
-    )).toBe(true);
+    expect(requests).toHaveLength(4);
+    expect(requests.map((request) => request.path)).toEqual([
+      "/api/pupu/cart/preview",
+      "/api/pupu/cart/commit",
+      "/api/pupu/checkout/preview",
+      "/api/pupu/checkout/create-invite-pay",
+    ]);
+    expect(requests[0].body).toEqual({
+      taskId: task.taskId,
+      taskVersion: task.version,
+    });
+    expect(requests[1].body).toMatchObject({
+      taskId: task.taskId,
+      taskVersion: task.version,
+      confirmationId: "cart-confirmation",
+      idempotencyKey: expect.stringMatching(/^cart-/),
+    });
+    expect(requests[2].body).toEqual({
+      taskId: task.taskId,
+      taskVersion: task.version,
+    });
+    expect(requests[3].body).toMatchObject({
+      taskId: task.taskId,
+      taskVersion: task.version,
+      confirmationId: "checkout-confirmation",
+      idempotencyKey: expect.stringMatching(/^order-/),
+    });
+    for (const request of requests) {
+      expect(request.body).not.toHaveProperty("items");
+      expect(request.body).not.toHaveProperty("planId");
+      expect(request.body).not.toHaveProperty("previewId");
+      expect(request.body).not.toHaveProperty("version");
+      expect(request.body).not.toHaveProperty("address");
+    }
   });
 });

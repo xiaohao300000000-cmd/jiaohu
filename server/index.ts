@@ -17,7 +17,6 @@ import { handlePupuAddressRequest } from "./pupu/address-router";
 import { PupuCartController } from "./pupu/cart-controller";
 import { handlePupuCommerceRequest } from "./pupu/commerce-router";
 import { PupuCheckoutController } from "./pupu/checkout-controller";
-import { InMemoryTaskStore } from "./tasks/in-memory-task-store";
 import { getDatabaseConfig } from "./db/config";
 import { createDatabasePool } from "./db/pool";
 import { migrate } from "./db/migrate";
@@ -62,7 +61,6 @@ const taskService = new TaskApplicationService(
   new PostgresTaskRepository(),
   new TaskCoordinator(),
 );
-const taskCoordinator = new InMemoryTaskStore();
 
 function requestHeaders(
   headers: express.Request["headers"],
@@ -288,7 +286,7 @@ app.use(
     try {
       await sendWebResponse(
         await handlePupuCommerceRequest(request, {
-          taskCoordinator, taskService, ownerId: resolveTaskOwner(request).ownerId, sessionStore, cartController, checkoutController, config: loginConfig,
+          taskService, ownerId: resolveTaskOwner(request).ownerId, sessionStore, cartController, checkoutController, config: loginConfig,
         }),
         res,
       );

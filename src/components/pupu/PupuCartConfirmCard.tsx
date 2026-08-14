@@ -5,34 +5,31 @@ import type {
   createPupuCommerceClient,
 } from "../../ai/pupu-commerce-client";
 import type { TaskSnapshot } from "../../domain/task-contract";
-import type { ProductSummary } from "../agent/agent-ui-event";
 import { PupuCheckoutJourney } from "./PupuCheckoutJourney";
 
 type CommerceClient = ReturnType<typeof createPupuCommerceClient>;
 
 interface Props {
-  products: ProductSummary[];
   task: TaskSnapshot;
-  planId: string;
   commerce: CommerceClient;
 }
 
 export function PupuCartConfirmCard({
-  products,
   task: initialTask,
-  planId,
   commerce,
 }: Props) {
   const [task, setTask] = useState(initialTask);
   const [preview, setPreview] = useState<{
-    previewId: string;
-    version: number;
+    confirmationId: string;
     totalCents: number;
   } | null>(null);
   const [phase, setPhase] = useState<
     "idle" | "loading" | "confirm" | "committing" | "verified" | "error"
   >("idle");
-  const quantity = products.reduce((sum, item) => sum + item.quantity, 0);
+  const quantity = task.context.selectedProducts.reduce(
+    (sum, item) => sum + item.quantity,
+    0,
+  );
   const identity = (): CommerceTaskIdentity => ({
     taskId: task.taskId,
     version: task.version,
@@ -41,7 +38,7 @@ export function PupuCartConfirmCard({
   async function prepare() {
     setPhase("loading");
     try {
-      const result = await commerce.previewCart(identity(), planId, products);
+      const result = await commerce.previewCart(identity());
       setPreview(result);
       setTask(result.task);
       setPhase("confirm");
@@ -56,7 +53,7 @@ export function PupuCartConfirmCard({
     try {
       const result = await commerce.commitCart(
         identity(),
-        { previewId: preview.previewId, version: preview.version },
+        preview.confirmationId,
       );
       setTask(result.task);
       setPhase(result.status === "verified" ? "verified" : "error");
@@ -108,10 +105,7 @@ export function PupuCartConfirmCard({
         </button>
       ) : null}
       {phase === "verified" && (
-        <PupuCheckoutJourney
-          task={task}
-          commerce={commerce}
-        />
+        <PupuCheckoutJourney task={task} commerce={commerce} />
       )}
     </section>
   );

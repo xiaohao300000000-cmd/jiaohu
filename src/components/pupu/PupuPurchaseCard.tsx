@@ -35,17 +35,7 @@ export function PupuPurchaseCard({
   const budgetPercent = userBudget && userBudget > 0
     ? Math.min(100, (estimatedTotal / userBudget) * 100)
     : null;
-  const summaries = products.map((product) => ({
-    productId: product.productId,
-    providerProductId: product.providerProductId,
-    name: product.name,
-    specification: `数量 ${product.quantity}`,
-    unitPrice: product.unitPriceCents / 100,
-    quantity: product.quantity,
-    currency: "CNY" as const,
-    stockStatus: "in_stock" as const,
-    collectedAt: "",
-  }));
+
 
   return (
     <motion.article
@@ -144,12 +134,7 @@ export function PupuPurchaseCard({
       </AnimatePresence>
 
       {!readOnly && task.phase === "awaiting_cart_confirmation" && (
-        <PupuCartConfirmCard
-          products={summaries}
-          task={task}
-          planId={plan.planId}
-          commerce={commerce}
-        />
+        <PupuCartConfirmCard task={task} commerce={commerce} />
       )}
     </motion.article>
   );

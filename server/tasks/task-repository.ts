@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
 import type {
   TaskAddressBinding,
@@ -25,6 +26,44 @@ export interface CandidateInput {
   evidenceRef?: string;
   collectedAt: string;
 }
+
+export type ConfirmationKind = "cart" | "checkout";
+
+export interface StoredConfirmation {
+  confirmationId: string;
+  kind: ConfirmationKind;
+  taskVersion: number;
+  payloadHash: string;
+  payload: unknown;
+  expiresAt: string;
+}
+
+interface ConfirmationRow {
+  confirmation_id: string;
+  kind: ConfirmationKind;
+  task_version: string;
+  payload_hash: string;
+  provider_payload: unknown;
+  expires_at: Date;
+}
+
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalJson(entry)]),
+    );
+  }
+  return value;
+}
+
+function payloadHash(payload: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalJson(payload)))
+    .digest("hex");
+}
 import {
   policyFor,
   TaskConflictError,
@@ -45,6 +84,7 @@ interface TaskRow {
   goal: TaskGoal;
   phase: TaskPhase;
   request_text: string;
+  provider_account_id: string | null;
   people_count: number | null;
   budget_cents: number | null;
   dietary_requirements: unknown;
@@ -54,6 +94,7 @@ interface TaskRow {
   store_id: string | null;
   place_id: string | null;
   place_zip: number | null;
+  binding_version: string | null;
   plan_id: string | null;
   plan_version: string | null;
   title: string | null;
@@ -117,9 +158,9 @@ export class PostgresTaskRepository {
     const result = await client.query<TaskRow>(
       `SELECT
         t.task_id, t.version, t.domain, t.goal, t.phase, t.request_text,
-        t.people_count, t.budget_cents, t.dietary_requirements,
-        t.requirements, t.requested_capabilities,
-        b.receiver_id, b.store_id, b.place_id, b.place_zip,
+        t.provider_account_id, t.people_count, t.budget_cents,
+        t.dietary_requirements, t.requirements, t.requested_capabilities,
+        b.receiver_id, b.store_id, b.place_id, b.place_zip, b.binding_version,
         p.plan_id, p.plan_version, p.title, p.explanation,
         p.total_cents, p.currency
       FROM tasks t
@@ -170,6 +211,23 @@ export class PostgresTaskRepository {
             placeZip: row.place_zip ?? undefined,
           }
         : undefined;
+    const confirmations = await client.query<ConfirmationRow>(
+      `SELECT
+        confirmation_id, kind, task_version, payload_hash,
+        provider_payload, expires_at
+       FROM task_confirmations
+       WHERE task_id = $1
+         AND status = 'active'
+         AND expires_at > now()
+       ORDER BY created_at DESC`,
+      [taskId],
+    );
+    const cartConfirmation = confirmations.rows.find(
+      (confirmation) => confirmation.kind === "cart",
+    );
+    const checkoutConfirmation = confirmations.rows.find(
+      (confirmation) => confirmation.kind === "checkout",
+    );
 
     return {
       taskId: row.task_id,
@@ -185,6 +243,24 @@ export class PostgresTaskRepository {
         requirements: strings(row.requirements),
         selectedProducts,
         addressBinding,
+        ...(cartConfirmation
+          ? {
+              cartPreview: {
+                id: cartConfirmation.confirmation_id,
+                version: Number(cartConfirmation.task_version),
+                expiresAt: cartConfirmation.expires_at.toISOString(),
+              },
+            }
+          : {}),
+        ...(checkoutConfirmation
+          ? {
+              checkoutPreview: {
+                id: checkoutConfirmation.confirmation_id,
+                version: Number(checkoutConfirmation.task_version),
+                expiresAt: checkoutConfirmation.expires_at.toISOString(),
+              },
+            }
+          : {}),
       },
       ...(row.plan_id
         ? {
@@ -578,4 +654,223 @@ export class PostgresTaskRepository {
       [runId, ownerId, status],
     );
   }
+
+  async createConfirmation(
+    client: PoolClient,
+    ownerId: string,
+    providerAccountId: string,
+    taskId: string,
+    expectedVersion: number,
+    kind: ConfirmationKind,
+    payload: unknown,
+    expiresAt: Date,
+  ): Promise<{ confirmationId: string; task: TaskSnapshot }> {
+    if (!(expiresAt.getTime() > Date.now())) {
+      throw new TaskConflictError("confirmation expiry is invalid");
+    }
+    const metadata = await client.query<{
+      version: string;
+      phase: TaskPhase;
+      provider_account_id: string | null;
+      binding_version: string | null;
+      plan_id: string | null;
+      plan_version: string | null;
+    }>(
+      `SELECT
+        t.version, t.phase, t.provider_account_id,
+        b.binding_version, p.plan_id, p.plan_version
+       FROM tasks t
+       LEFT JOIN task_address_bindings b ON b.task_id = t.task_id
+       LEFT JOIN final_plans p
+         ON p.task_id = t.task_id AND p.status = 'current'
+       WHERE t.task_id = $1 AND t.owner_id = $2
+       FOR UPDATE OF t`,
+      [taskId, ownerId],
+    );
+    const row = metadata.rows[0];
+    const expectedPhase: TaskPhase =
+      kind === "cart"
+        ? "awaiting_cart_confirmation"
+        : "awaiting_order_confirmation";
+    if (
+      !row ||
+      Number(row.version) !== expectedVersion ||
+      row.phase !== expectedPhase ||
+      row.provider_account_id !== providerAccountId ||
+      !row.binding_version ||
+      !row.plan_id ||
+      !row.plan_version
+    ) {
+      throw new TaskConflictError("task cannot create this confirmation");
+    }
+
+    await client.query(
+      `UPDATE task_confirmations SET status = 'invalidated'
+       WHERE task_id = $1 AND kind = $2 AND status = 'active'`,
+      [taskId, kind],
+    );
+    const confirmationId = crypto.randomUUID();
+    const nextTaskVersion = expectedVersion + 1;
+    const updated = await client.query(
+      `UPDATE tasks SET version = version + 1, updated_at = now()
+       WHERE task_id = $1 AND owner_id = $2 AND version = $3`,
+      [taskId, ownerId, expectedVersion],
+    );
+    if (updated.rowCount !== 1) {
+      throw new TaskConflictError("task version conflict");
+    }
+    await client.query(
+      `INSERT INTO task_confirmations (
+        confirmation_id, task_id, kind, task_version,
+        plan_id, plan_version, binding_version,
+        payload_hash, provider_payload, status, expires_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9::jsonb, 'active', $10
+      )`,
+      [
+        confirmationId,
+        taskId,
+        kind,
+        nextTaskVersion,
+        row.plan_id,
+        Number(row.plan_version),
+        Number(row.binding_version),
+        payloadHash(payload),
+        JSON.stringify(payload),
+        expiresAt,
+      ],
+    );
+    return {
+      confirmationId,
+      task: await this.loadSnapshot(client, ownerId, taskId),
+    };
+  }
+
+  async consumeConfirmation(
+    client: PoolClient,
+    ownerId: string,
+    providerAccountId: string,
+    taskId: string,
+    expectedVersion: number,
+    confirmationId: string,
+    kind: ConfirmationKind,
+    decision: TaskDecision,
+  ): Promise<{ task: TaskSnapshot; confirmation: StoredConfirmation }> {
+    const current = await this.loadSnapshot(client, ownerId, taskId);
+    const expectedPhase: TaskPhase =
+      kind === "cart"
+        ? "awaiting_cart_confirmation"
+        : "awaiting_order_confirmation";
+    if (
+      current.version !== expectedVersion ||
+      current.phase !== expectedPhase ||
+      decision.next.phase === current.phase
+    ) {
+      throw new TaskConflictError("task cannot consume this confirmation");
+    }
+    const row = await client.query<{
+      provider_account_id: string | null;
+      binding_version: string | null;
+      plan_id: string | null;
+      plan_version: string | null;
+    }>(
+      `SELECT
+        t.provider_account_id, b.binding_version,
+        p.plan_id, p.plan_version
+       FROM tasks t
+       LEFT JOIN task_address_bindings b ON b.task_id = t.task_id
+       LEFT JOIN final_plans p
+         ON p.task_id = t.task_id AND p.status = 'current'
+       WHERE t.task_id = $1 AND t.owner_id = $2
+       FOR UPDATE OF t`,
+      [taskId, ownerId],
+    );
+    const metadata = row.rows[0];
+    if (
+      !metadata ||
+      metadata.provider_account_id !== providerAccountId ||
+      !metadata.binding_version ||
+      !metadata.plan_id ||
+      !metadata.plan_version
+    ) {
+      throw new TaskConflictError("task provider state changed");
+    }
+    const confirmationResult = await client.query<ConfirmationRow>(
+      `SELECT
+        confirmation_id, kind, task_version, payload_hash,
+        provider_payload, expires_at
+       FROM task_confirmations
+       WHERE confirmation_id = $1
+         AND task_id = $2
+         AND kind = $3
+         AND task_version = $4
+         AND plan_id = $5
+         AND plan_version = $6
+         AND binding_version = $7
+         AND status = 'active'
+         AND expires_at > now()
+       FOR UPDATE`,
+      [
+        confirmationId,
+        taskId,
+        kind,
+        expectedVersion,
+        metadata.plan_id,
+        Number(metadata.plan_version),
+        Number(metadata.binding_version),
+      ],
+    );
+    const confirmation = confirmationResult.rows[0];
+    if (
+      !confirmation ||
+      payloadHash(confirmation.provider_payload) !== confirmation.payload_hash
+    ) {
+      throw new TaskConflictError("confirmation is stale or invalid");
+    }
+    await client.query(
+      `UPDATE task_confirmations
+       SET status = 'consumed', consumed_at = now()
+       WHERE confirmation_id = $1`,
+      [confirmationId],
+    );
+    const task = await this.applyDecision(
+      client,
+      ownerId,
+      expectedVersion,
+      decision,
+    );
+    return {
+      task,
+      confirmation: {
+        confirmationId: confirmation.confirmation_id,
+        kind: confirmation.kind,
+        taskVersion: Number(confirmation.task_version),
+        payloadHash: confirmation.payload_hash,
+        payload: confirmation.provider_payload,
+        expiresAt: confirmation.expires_at.toISOString(),
+      },
+    };
+  }
+
+
+  async assertProviderAccount(
+    client: PoolClient,
+    ownerId: string,
+    providerAccountId: string,
+    taskId: string,
+  ): Promise<void> {
+    const result = await client.query(
+      `SELECT 1 FROM tasks
+       WHERE task_id = $1
+         AND owner_id = $2
+         AND provider_account_id = $3
+       FOR UPDATE`,
+      [taskId, ownerId, providerAccountId],
+    );
+    if (result.rowCount !== 1) {
+      throw new TaskConflictError("task provider account conflict");
+    }
+  }
+
 }

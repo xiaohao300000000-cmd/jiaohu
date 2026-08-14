@@ -16,7 +16,7 @@ const task: TaskSnapshot = {
   nextActions: ["preview_checkout"],
 };
 const preview = {
-  previewId: "checkout-a", version: 1, addressHint: "已选择的朴朴地址",
+  confirmationId: "checkout-confirmation", addressHint: "已选择的朴朴地址",
   lines: [{ name: "鸡胸肉", quantity: 1, priceCents: 1390 }],
   productTotalCents: 1390, deliveryFeeCents: 300, discountCents: 100,
   payableCents: 1590, expiresAt: "2999-01-01T00:00:00Z",
@@ -26,7 +26,7 @@ function commerce(createReject = false) {
     ...task, version: 6,
     context: {
       ...task.context,
-      checkoutPreview: { id: "checkout-a", version: 1, expiresAt: preview.expiresAt },
+      checkoutPreview: { id: "checkout-confirmation", version: 6, expiresAt: preview.expiresAt },
     },
   };
   return {
@@ -55,7 +55,7 @@ describe("PupuCheckoutJourney", () => {
     await user.click(screen.getByRole("button", { name: "确认并创建真实待付款订单" }));
     expect(client.createInvitePay).toHaveBeenCalledWith(
       { taskId: "task-checkout", version: 6 },
-      { previewId: "checkout-a", version: 1 },
+      "checkout-confirmation",
     );
     expect(await screen.findByRole("link", { name: "去朴朴官方付款" }))
       .toHaveAttribute("href", expect.stringContaining("invite-a"));
