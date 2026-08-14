@@ -2,7 +2,72 @@ import { describe, expect, it, vi } from "vitest";
 import type { HermesRunEvent } from "../src/ai/hermes-event-adapter";
 import type { ToolArtifactIdentity } from "./tool-artifact";
 import { handleChatRequest } from "./chat-handler";
-import { InMemoryTaskStore } from "./tasks/in-memory-task-store";
+import type {
+  TaskPhase,
+  TaskSnapshot,
+} from "../src/domain/task-contract";
+import { TaskCoordinator } from "./tasks/task-coordinator";
+import type { TaskProposal } from "./tasks/task-proposal";
+
+class TestTaskStore {
+  private readonly tasks = new Map<string, TaskSnapshot>();
+  private readonly rules = new TaskCoordinator();
+  private readonly createId: () => string;
+
+  constructor(options: { createId?: () => string } = {}) {
+    this.createId = options.createId || (() => crypto.randomUUID());
+  }
+
+  resolve(command: {
+    input: string;
+    taskId?: string;
+    proposal: TaskProposal;
+  }): TaskSnapshot {
+    const current = command.taskId
+      ? this.resume(command.taskId)
+      : undefined;
+    const decision = current
+      ? this.rules.acceptProposal(
+          current,
+          command.input,
+          command.proposal,
+        )
+      : this.rules.acceptNewTask(
+          this.createId(),
+          command.input,
+          command.proposal,
+        );
+    const task = {
+      ...structuredClone(decision.next),
+      version: current ? current.version + 1 : decision.next.version,
+    };
+    this.tasks.set(task.taskId, task);
+    return structuredClone(task);
+  }
+
+  resume(taskId: string): TaskSnapshot {
+    const task = this.tasks.get(taskId);
+    if (!task) throw new Error("test task was not found");
+    return structuredClone(task);
+  }
+
+  transition(
+    taskId: string,
+    expectedVersion: number,
+    phase: TaskPhase,
+  ): TaskSnapshot {
+    const current = this.resume(taskId);
+    if (current.version !== expectedVersion) {
+      throw new Error("test task version conflict");
+    }
+    const task = {
+      ...this.rules.transition(current, phase).next,
+      version: current.version + 1,
+    };
+    this.tasks.set(taskId, task);
+    return structuredClone(task);
+  }
+}
 
 const liveEnvelope = {
   schema_version: "1",
@@ -78,7 +143,7 @@ function testTaskAgent() {
   return {
     propose: async ({ input, current }: {
       input: string;
-      current?: ReturnType<InMemoryTaskStore["resume"]>;
+      current?: ReturnType<TestTaskStore["resume"]>;
     }) => {
       const commerce = /买|找|搜|牛奶|购物车/u.test(input) ||
         current?.domain === "commerce";
@@ -99,27 +164,25 @@ function testTaskAgent() {
 }
 
 function testTaskService(
-  store = new InMemoryTaskStore(),
+  store = new TestTaskStore(),
 ) {
   return {
-    resolve: async (command: { input: string; taskId?: string }) =>
-      store.resolve(command),
+    resolve: async (command: {
+      input: string;
+      taskId?: string;
+      proposal: TaskProposal;
+    }) => store.resolve(command),
     get: async (_ownerId: string, taskId: string) =>
       store.resume(taskId),
     transition: async (command: {
       taskId: string;
       expectedVersion: number;
-      phase: Parameters<InMemoryTaskStore["transition"]>[2];
+      phase: TaskPhase;
     }) => store.transition(
       command.taskId,
       command.expectedVersion,
       command.phase,
     ),
-    attachProducts: async (
-      taskId: string,
-      expectedVersion: number,
-      products: Parameters<InMemoryTaskStore["attachProducts"]>[2],
-    ) => store.attachProducts(taskId, expectedVersion, products),
   };
 }
 
@@ -159,8 +222,9 @@ describe("handleChatRequest", () => {
     expect(response.headers.get("content-type")).toContain("text/event-stream");
     expect(body).toContain('"type":"data-journey"');
     expect(body).not.toContain('"type":"data-pupu"');
-    expect(body).toContain('"type":"presentation.updated"');
-    expect(body).toContain('"dataSource":"live"');
+    expect(body).toContain('"type":"trace.updated"');
+    expect(body).not.toContain('"type":"presentation.updated"');
+    expect(body).not.toContain('"dataSource":"live"');
     expect(body).not.toMatch(/authorization|cookie|reasoning_content|secret/i);
     expect(createRun).toHaveBeenCalledWith(
       expect.stringContaining("Call pupu_search_catalog exactly once"),
@@ -254,7 +318,7 @@ describe("handleChatRequest", () => {
   });
 
   it("routes commerce from server task state without accepting pupuIntent", async () => {
-    const coordinator = new InMemoryTaskStore({ createId: () => "task-route-1" });
+    const coordinator = new TestTaskStore({ createId: () => "task-route-1" });
     const createRun = vi.fn(async (_input: string) => ({ runId: "run-1" }));
     const preparePupuScope = vi.fn(async () => undefined);
     const request = new Request("http://localhost/api/chat", {
@@ -303,7 +367,7 @@ describe("handleChatRequest", () => {
 
     const response = await handleChatRequest(request, {
       taskAgent: testTaskAgent(),
-      taskService: testTaskService(new InMemoryTaskStore({ createId: () => "task-advice-1" })),
+      taskService: testTaskService(new TestTaskStore({ createId: () => "task-advice-1" })),
       getPupuReadiness: async () => "ready",
       preparePupuScope,
       createRun,
@@ -335,7 +399,7 @@ describe("handleChatRequest", () => {
     });
     const response = await handleChatRequest(request, {
       taskAgent: testTaskAgent(),
-      taskService: testTaskService(new InMemoryTaskStore({ createId: () => `task-${readiness}` })),
+      taskService: testTaskService(new TestTaskStore({ createId: () => `task-${readiness}` })),
       getPupuReadiness: async () => readiness,
       createRun,
       streamRun: () => events(),
@@ -348,7 +412,7 @@ describe("handleChatRequest", () => {
   });
 
   it("resumes the same task after readiness changes without reclassification", async () => {
-    const coordinator = new InMemoryTaskStore({ createId: () => "task-resume-1" });
+    const coordinator = new TestTaskStore({ createId: () => "task-resume-1" });
     const firstRequest = new Request("http://localhost/api/chat", {
       method: "POST",
       body: JSON.stringify({
@@ -417,7 +481,7 @@ describe("handleChatRequest", () => {
   });
 
   it("accepts products only from submit_final_plan, never from summary text", async () => {
-    const store = new InMemoryTaskStore({
+    const store = new TestTaskStore({
       createId: () => "60000000-0000-4000-8000-000000000001",
     });
     const base = testTaskService(store);

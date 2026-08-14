@@ -299,7 +299,11 @@ export class PostgresTaskRepository {
         dietary_requirements = $10::jsonb,
         requirements = $11::jsonb,
         requested_capabilities = $12::jsonb,
-        updated_at = now()
+        updated_at = now(),
+        terminal_at = CASE
+          WHEN $6 = 'completed' THEN COALESCE(terminal_at, now())
+          ELSE NULL
+        END
       WHERE task_id = $1 AND owner_id = $2 AND version = $3`,
       [
         next.taskId,

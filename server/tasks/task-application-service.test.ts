@@ -166,4 +166,31 @@ describeDb("TaskApplicationService", () => {
     })).rejects.toBeInstanceOf(TaskConflictError);
   });
 
+
+  it("records terminal time when a task completes", async () => {
+    const app = new TaskApplicationService(
+      pool!,
+      new PostgresTaskRepository(),
+      new TaskCoordinator(),
+      () => "20000000-0000-4000-8000-000000000004",
+    );
+    const created = await app.resolve({
+      ownerId: "owner-a",
+      input: "写一句问候",
+      proposal: testProposal("写一句问候"),
+    });
+    await app.transition({
+      ownerId: "owner-a",
+      taskId: created.taskId,
+      expectedVersion: created.version,
+      phase: "completed",
+    });
+
+    const row = await pool!.query(
+      "SELECT terminal_at FROM tasks WHERE task_id = $1",
+      [created.taskId],
+    );
+    expect(row.rows[0].terminal_at).toBeInstanceOf(Date);
+  });
+
 });

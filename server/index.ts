@@ -48,6 +48,7 @@ const cartController = new PupuCartController();
 const checkoutController = new PupuCheckoutController();
 const databasePool = createDatabasePool(getDatabaseConfig());
 await migrate(databasePool, join(process.cwd(), "server/db/migrations"));
+await databasePool.query("SELECT 1");
 const taskAgentConfig = getHermesConfig();
 const taskAgent = new HermesTaskAgent({
   createRun: (input, sessionId, signal) =>
