@@ -1,57 +1,52 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TaskSnapshot } from "../domain/task-contract";
 import type { JourneyUIMessage } from "./journey-ui-message";
 import { useLiveJourney } from "./useLiveJourney";
 
-function streamResponse(
-  requestId: string,
-  options: { includePupu?: boolean } = {},
-): Response {
+const finalTask: TaskSnapshot = {
+  taskId: "task-restorable",
+  version: 6,
+  requestText: "买两盒牛奶",
+  domain: "commerce",
+  goal: "prepare_cart",
+  phase: "awaiting_cart_confirmation",
+  context: {
+    dietaryRequirements: [],
+    requirements: [],
+    selectedProducts: [{
+      productId: "milk",
+      name: "鲜牛奶",
+      quantity: 2,
+      unitPriceCents: 1290,
+      source: "pupu_live",
+    }],
+  },
+  finalPlan: {
+    planId: "plan-postgres",
+    version: 2,
+    title: "牛奶补货",
+    explanation: "结构化最终方案",
+    totalCents: 2580,
+    currency: "CNY",
+  },
+  requestedCapabilities: ["commerce.catalog.search"],
+  allowedCapabilities: ["commerce.cart.prepare"],
+  nextActions: ["confirm_cart"],
+};
+
+function streamResponse(requestId: string, task?: TaskSnapshot): Response {
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute({ writer }) {
       writer.write({
         type: "data-journey",
         data: { type: "stream.started", requestId, runId: "run-1" },
       });
-      if (options.includePupu) {
+      if (task) {
         writer.write({
           type: "data-journey",
-          data: {
-            type: "presentation.updated",
-            requestId,
-            presentation: {
-              capability: "pupu",
-              component: "pupu.purchase-plan",
-              mode: "canvas",
-              dataSource: "live",
-              payload: {
-                stage: "cart_ready",
-                title: "实时方案",
-                summary: "实时数据",
-                meal: "按需采购",
-                people: 1,
-                constraints: ["只读"],
-                decisionSummary: "来自朴朴实时读取",
-                products: [
-                  {
-                    productId: "store-1",
-                    name: "鲜牛奶",
-                    specification: "950ml",
-                    unitPrice: 12.9,
-                    quantity: 1,
-                    currency: "CNY",
-                    stockStatus: "in_stock",
-                    collectedAt: "2026-08-10T00:00:00.000Z",
-                  },
-                ],
-                estimatedTotal: 12.9,
-                currency: "CNY",
-                cartVersion: 0,
-                estimatedDelivery: "以实时页面为准",
-              },
-            },
-          },
+          data: { type: "task.updated", requestId, task },
         });
       }
       writer.write({
@@ -60,20 +55,11 @@ function streamResponse(
           type: "stream.finished",
           requestId,
           result: {
-            title: "朴朴实时方案",
-            summary: "查询完成",
-            totalAmount: options.includePupu ? 12.9 : 0,
+            title: "处理完成",
+            summary: "文字总结不承载商品事实",
+            totalAmount: 0,
             currency: "CNY",
-            items: options.includePupu
-              ? [
-                  {
-                    id: "store-1",
-                    name: "鲜牛奶",
-                    detail: "950ml",
-                    price: 12.9,
-                  },
-                ]
-              : [],
+            items: [],
           },
         },
       });
@@ -83,13 +69,16 @@ function streamResponse(
 }
 
 describe("useLiveJourney", () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+  });
+
   it("dispatches request.sent immediately and consumes journey data parts", async () => {
     let resolveFetch: ((response: Response) => void) | undefined;
     const fetchMock = vi.fn<typeof fetch>(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveFetch = resolve;
-        }),
+      () => new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      }),
     );
     const { result } = renderHook(() => useLiveJourney({ fetch: fetchMock }));
 
@@ -106,54 +95,70 @@ describe("useLiveJourney", () => {
     const body = fetchInput instanceof Request
       ? await fetchInput.clone().json() as { requestId: string }
       : JSON.parse(String(fetchInit?.body)) as { requestId: string };
-    const requestId = body.requestId;
     expect(body).not.toHaveProperty("pupuIntent");
-    resolveFetch?.(streamResponse(requestId));
+    resolveFetch?.(streamResponse(body.requestId));
     await act(async () => submission);
 
     await waitFor(() => expect(result.current.snapshot.state).toBe("ready"));
   });
 
-  it("stores streamed live Pupu presentations only in the Journey snapshot", async () => {
-    const fetchMock = vi.fn(async (input, init) => {
-      const url = String(input);
-      if (url === "/api/pupu/login/status") {
-        return Response.json({ phase: "connected" });
-      }
-      if (url === "/api/pupu/addresses") {
-        return Response.json({ addresses: [{
-          id: "receiver-a", label: "地址 1", region: "已保存区域",
-          detailHint: "3 栋 1201", phoneSuffix: "",
-        }] });
-      }
-      if (url === "/api/pupu/addresses/select") {
-        return Response.json({ selected: true, addressId: "receiver-a" });
-      }
-      const body = JSON.parse(String(init?.body));
-      return streamResponse(body.requestId, { includePupu: true });
+  it("stores only the Task ID and clears it when the user resets", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const body = input instanceof Request
+        ? await input.clone().json() as { requestId: string }
+        : JSON.parse(String(init?.body)) as { requestId: string };
+      return streamResponse(body.requestId, finalTask);
     });
     const { result } = renderHook(() => useLiveJourney({ fetch: fetchMock }));
 
     await act(async () => {
-      await result.current.submit("买牛奶");
-    });
-    await act(async () => {
-      await result.current.selectAddress("receiver-a");
+      await result.current.submit("买两盒牛奶");
     });
 
     await waitFor(() =>
-      expect(result.current.snapshot.presentation?.dataSource).toBe("live"),
+      expect(result.current.snapshot.task?.finalPlan?.planId).toBe("plan-postgres"),
     );
-    expect(result.current.snapshot.presentation).toMatchObject({
-      component: "pupu.purchase-plan",
-      payload: { products: [{ name: "鲜牛奶" }] },
-    });
-    expect("pupuEvent" in result.current).toBe(false);
+    expect(window.sessionStorage.getItem("liquidjourney.taskId")).toBe(
+      "task-restorable",
+    );
+    expect(window.sessionStorage).toHaveLength(1);
 
     act(() => result.current.reset());
 
     expect(result.current.snapshot.state).toBe("idle");
-    expect(result.current.snapshot.presentation).toBeNull();
+    expect(result.current.snapshot.task).toBeNull();
+    expect(window.sessionStorage.getItem("liquidjourney.taskId")).toBeNull();
+  });
+
+  it("restores the authoritative TaskSnapshot after refresh", async () => {
+    window.sessionStorage.setItem("liquidjourney.taskId", finalTask.taskId);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({ task: finalTask }),
+    );
+
+    const { result } = renderHook(() => useLiveJourney({ fetch: fetchMock }));
+
+    await waitFor(() => expect(result.current.snapshot.task).toEqual(finalTask));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks/task-restorable",
+      { credentials: "same-origin" },
+    );
+    expect(result.current.snapshot.task?.context.selectedProducts).toEqual(
+      finalTask.context.selectedProducts,
+    );
+  });
+
+  it("clears a stale Task ID when restore fails", async () => {
+    window.sessionStorage.setItem("liquidjourney.taskId", "missing-task");
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, { status: 404 }),
+    );
+
+    renderHook(() => useLiveJourney({ fetch: fetchMock }));
+
+    await waitFor(() =>
+      expect(window.sessionStorage.getItem("liquidjourney.taskId")).toBeNull(),
+    );
   });
 
   it("turns transport failures into a typed journey error", async () => {

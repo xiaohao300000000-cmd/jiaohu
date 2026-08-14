@@ -74,29 +74,21 @@ describe("mapHermesEvent", () => {
       context,
     );
 
-    expect(pupu).toMatchObject({
-      type: "presentation.updated",
+    expect(pupu).toEqual({
+      type: "trace.updated",
       requestId,
-      presentation: {
-        capability: "pupu",
-        component: "pupu.purchase-plan",
-        dataSource: "live",
-        payload: {
-          products: [
-            {
-              productId: "store-product-1",
-              name: "鲜牛奶",
-              specification: "950ml",
-              unitPrice: 12.9,
-              stockStatus: "in_stock",
-            },
-          ],
-          estimatedTotal: 12.9,
-          constraints: ["仅使用实时数据", "写入购物车或创建订单前必须确认"],
-        },
-      },
+      entries: context.trace,
     });
-    expect(JSON.stringify(pupu)).not.toMatch(/"budget"|"total":/);
+    expect(context.products).toMatchObject([
+      {
+        productId: "store-product-1",
+        name: "鲜牛奶",
+        specification: "950ml",
+        unitPrice: 12.9,
+        stockStatus: "in_stock",
+      },
+    ]);
+    expect(JSON.stringify(pupu)).not.toContain("pupu.purchase-plan");
 
     expect(
       mapHermesEvent(

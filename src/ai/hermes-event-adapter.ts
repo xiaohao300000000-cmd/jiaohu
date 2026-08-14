@@ -249,33 +249,10 @@ function mapPupuOutput(
       [...context.products, ...products].map((product) => [product.productId, product]),
     ).values(),
   ];
-  const total = context.products.reduce(
-    (sum, product) => sum + product.unitPrice * product.quantity,
-    0,
-  );
   return {
-    type: "presentation.updated",
+    type: "trace.updated",
     requestId: context.requestId,
-    presentation: {
-      capability: "pupu",
-      component: "pupu.purchase-plan",
-      mode: "canvas",
-      dataSource: "live",
-      payload: {
-        stage: "cart_ready",
-        title: "朴朴实时商品方案",
-        summary: `根据“${context.requestText}”读取了 ${products.length} 件实时商品。`,
-        meal: "按需采购",
-        people: 1,
-        constraints: ["仅使用实时数据", "写入购物车或创建订单前必须确认"],
-        decisionSummary: "商品、价格与库存均来自本次朴朴 CLI 实时读取。",
-        products: context.products,
-        estimatedTotal: total,
-        currency: "CNY",
-        cartVersion: 0,
-        estimatedDelivery: "以朴朴实时页面为准",
-      },
-    },
+    entries: context.trace,
   };
 }
 

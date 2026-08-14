@@ -51,36 +51,12 @@ const completeResult: JourneyResult = {
   ],
 };
 
-const livePupuPresentation: JourneyPresentation = {
-  capability: "pupu",
-  component: "pupu.purchase-plan",
+const genericPresentation: JourneyPresentation = {
+  capability: "generic",
+  component: "journey.result",
   mode: "canvas",
   dataSource: "live",
-  payload: {
-    stage: "cart_ready",
-    title: "朴朴实时商品方案",
-    summary: "本次实时查询结果",
-    meal: "按需采购",
-    people: 1,
-    constraints: ["仅使用实时数据"],
-    decisionSummary: "来自朴朴实时读取。",
-    products: [
-      {
-        productId: "store-1",
-        name: "鲜牛奶",
-        specification: "950ml",
-        unitPrice: 12.9,
-        quantity: 1,
-        currency: "CNY",
-        stockStatus: "in_stock",
-        collectedAt: "2026-08-11T00:00:00.000Z",
-      },
-    ],
-    estimatedTotal: 12.9,
-    currency: "CNY",
-    cartVersion: 0,
-    estimatedDelivery: "以朴朴实时页面为准",
-  },
+  payload: completeResult,
 };
 
 describe("journeyReducer", () => {
@@ -180,48 +156,52 @@ describe("journeyReducer", () => {
     expect(ready.result).toEqual(completeResult);
   });
 
-  it("merges the final Hermes meal summary into a live Pupu plan", () => {
-    const receiving = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent", requestId: "request-1", text: requestText,
-    });
-    const assembling = journeyReducer(receiving, {
-      type: "presentation.updated", requestId: "request-1",
-      presentation: livePupuPresentation,
-    });
-    const summary = "三道菜：清蒸鱼、蒜蓉青菜、香煎豆腐。步骤简单，覆盖蛋白质、蔬菜和豆制品。";
-    const ready = journeyReducer(assembling, {
-      type: "stream.finished", requestId: "request-1",
-      result: { ...completeResult, summary },
-    });
-
-    expect(ready.presentation).toMatchObject({
-      component: "pupu.purchase-plan",
-      payload: { summary, decisionSummary: summary },
-    });
-  });
-
-  it("recalculates the displayed total from the final selected products", () => {
-    const receiving = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent", requestId: "request-1", text: requestText,
-    });
-    const assembling = journeyReducer(receiving, {
-      type: "presentation.updated", requestId: "request-1",
-      presentation: {
-        ...livePupuPresentation,
-        payload: { ...livePupuPresentation.payload, estimatedTotal: 142.52 },
+  it("keeps TaskSnapshot FinalPlan authoritative when Hermes finishes with different copy", () => {
+    const finalTask: TaskSnapshot = {
+      ...searchingTask,
+      version: 4,
+      goal: "prepare_cart",
+      phase: "awaiting_cart_confirmation",
+      context: {
+        ...searchingTask.context,
+        selectedProducts: [{
+          productId: "store-1",
+          name: "鲜牛奶",
+          quantity: 2,
+          unitPriceCents: 1290,
+          source: "pupu_live",
+        }],
       },
+      finalPlan: {
+        planId: "plan-authoritative",
+        version: 2,
+        title: "早餐补货",
+        explanation: "数据库中的结构化方案",
+        totalCents: 2580,
+        currency: "CNY",
+      },
+    };
+    const receiving = journeyReducer(initialJourneySnapshot, {
+      type: "request.sent", requestId: "request-1", text: requestText,
     });
-    const ready = journeyReducer(assembling, {
-      type: "stream.finished", requestId: "request-1",
+    const withTask = journeyReducer(receiving, {
+      type: "task.updated", requestId: "request-1", task: finalTask,
+    });
+    const ready = journeyReducer(withTask, {
+      type: "stream.finished",
+      requestId: "request-1",
       result: {
-        title: "三道菜", summary: "只保留鲜牛奶", totalAmount: 12.9, currency: "CNY",
-        items: [{ id: "store-1", name: "鲜牛奶", detail: "950ml", price: 12.9 }],
+        ...completeResult,
+        summary: "文字说只买一盒，也不能改变结构化方案",
+        items: [],
       },
     });
-    expect(ready.presentation?.component).toBe("pupu.purchase-plan");
-    if (ready.presentation?.component === "pupu.purchase-plan") {
-      expect(ready.presentation.payload.estimatedTotal).toBe(12.9);
-    }
+
+    expect(ready.task).toEqual(finalTask);
+    expect(ready.task?.finalPlan?.planId).toBe("plan-authoritative");
+    expect(ready.task?.context.selectedProducts).toEqual(
+      finalTask.context.selectedProducts,
+    );
   });
 
   it("pauses for approval and resumes after either explicit response", () => {
@@ -336,12 +316,12 @@ describe("journeyReducer", () => {
     const assembling = journeyReducer(reasoning, {
       type: "presentation.updated",
       requestId: "request-1",
-      presentation: livePupuPresentation,
+      presentation: genericPresentation,
     });
 
     expect(assembling.state).toBe("assembling");
     expect(assembling.runId).toBe("run-1");
-    expect(assembling.presentation).toEqual(livePupuPresentation);
+    expect(assembling.presentation).toEqual(genericPresentation);
 
     const ready = journeyReducer(assembling, {
       type: "stream.finished",
@@ -350,16 +330,7 @@ describe("journeyReducer", () => {
     });
 
     expect(ready.state).toBe("ready");
-    expect(ready.presentation).toEqual({
-      ...livePupuPresentation,
-      payload: {
-        ...livePupuPresentation.payload,
-        summary: completeResult.summary,
-        decisionSummary: completeResult.summary,
-        products: [],
-        estimatedTotal: completeResult.totalAmount,
-      },
-    });
+    expect(ready.presentation).toEqual(genericPresentation);
   });
 
   it("clears stale presentations for a new request, error, and interruption", () => {
@@ -369,7 +340,7 @@ describe("journeyReducer", () => {
       activeRequestId: "request-1",
       requestText,
       runId: "run-1",
-      presentation: livePupuPresentation,
+      presentation: genericPresentation,
     };
 
     const failed = journeyReducer(active, {
@@ -403,7 +374,7 @@ describe("journeyReducer", () => {
     const unchanged = journeyReducer(current, {
       type: "presentation.updated",
       requestId: "request-1",
-      presentation: livePupuPresentation,
+      presentation: genericPresentation,
     });
 
     expect(unchanged).toBe(current);

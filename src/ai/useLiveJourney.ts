@@ -11,6 +11,7 @@ import type {
 } from "../components/journey/types";
 import type { TaskSnapshot } from "../domain/task-contract";
 import { createPupuAddressClient, type SavedPupuAddress } from "./pupu-address-client";
+import { createTaskClient } from "./task-client";
 import { createPupuLoginClient, type PupuLoginResponse } from "./pupu-login-client";
 import type { JourneyUIMessage } from "./journey-ui-message";
 
@@ -46,6 +47,10 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     () => createPupuLoginClient(options.fetch || fetch),
     [options.fetch],
   );
+  const taskClient = useMemo(
+    () => createTaskClient(options.fetch || fetch),
+    [options.fetch],
+  );
   const addressClient = useMemo(
     () => createPupuAddressClient(options.fetch || fetch),
     [options.fetch],
@@ -63,12 +68,30 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     reduce({ kind: "event", event });
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const taskId = window.sessionStorage.getItem("liquidjourney.taskId");
+    if (!taskId) return;
+    const requestId = `restore-${crypto.randomUUID()}`;
+    activeRequestId.current = requestId;
+    dispatch({ type: "request.sent", requestId, text: "恢复任务" });
+    void taskClient.get(taskId).then((task) => {
+      activeTask.current = task;
+      dispatch({ type: "task.updated", requestId, task });
+    }).catch(() => {
+      window.sessionStorage.removeItem("liquidjourney.taskId");
+    });
+  }, [dispatch, taskClient]);
+
   const chat = useChat<JourneyUIMessage>({
     transport,
     onData(part) {
       if (part.type !== "data-journey") return;
       if (part.data.type === "task.updated") {
         activeTask.current = part.data.task;
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem("liquidjourney.taskId", part.data.task.taskId);
+        }
         if (
           part.data.task.phase === "awaiting_login" ||
           part.data.task.phase === "awaiting_address"
@@ -320,6 +343,9 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     heldTask.current = null;
     selectedAddresses.current = [];
     addressLoadKey.current = null;
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("liquidjourney.taskId");
+    }
     reduce({ kind: "reset" });
   }, [chat]);
 

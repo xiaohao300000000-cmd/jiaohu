@@ -1,7 +1,3 @@
-import type {
-  AgentDataSource,
-  PupuPurchasePayload,
-} from "../agent/agent-ui-event";
 import type { PresentationMode } from "../home/presentation";
 import type { TaskSnapshot } from "../../domain/task-contract";
 
@@ -47,14 +43,6 @@ export interface JourneyResult {
   items: JourneyResultItem[];
 }
 
-export type PupuJourneyPayload = Omit<
-  PupuPurchasePayload,
-  "budget" | "total"
-> & {
-  estimatedTotal: number;
-  userBudget?: number;
-};
-
 export type PupuLoginPhase =
   | "phone" | "requesting" | "captcha" | "applying_captcha"
   | "sms" | "verifying" | "connected" | "error";
@@ -78,13 +66,6 @@ export interface PupuLoginPresentation {
   error?: { code: string; message: string; retryable: boolean };
 }
 export type JourneyPresentation =
-  | {
-      capability: "pupu";
-      component: "pupu.purchase-plan";
-      mode: PresentationMode;
-      dataSource: AgentDataSource;
-      payload: PupuJourneyPayload;
-    }
   | {
       capability: "pupu";
       component: "pupu.login";

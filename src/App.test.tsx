@@ -22,65 +22,37 @@ function liveResponse(requestId: string, includePupu = false): Response {
             version: 2,
             requestText: "朴朴搜索商品",
             domain: "commerce",
-            goal: "find_products",
-            phase: "awaiting_cart_confirmation",
+            goal: includePupu ? "prepare_cart" : "find_products",
+            phase: includePupu ? "awaiting_cart_confirmation" : "searching_catalog",
             context: {
               dietaryRequirements: [],
               requirements: ["朴朴搜索商品"],
-              selectedProducts: [{
+              selectedProducts: includePupu ? [{
                 productId: "store-1",
                 name: "鲜牛奶",
                 quantity: 1,
                 unitPriceCents: 1290,
                 source: "pupu_live",
-              }],
+              }] : [],
             },
+            ...(includePupu ? {
+              finalPlan: {
+                planId: "plan-live-1",
+                version: 1,
+                title: "朴朴实时商品方案",
+                explanation: "商品、价格与库存来自结构化最终方案。",
+                totalCents: 1290,
+                currency: "CNY",
+              },
+            } : {}),
             requestedCapabilities: ["commerce.catalog.search"],
-            allowedCapabilities: ["commerce.cart.prepare"],
-            nextActions: ["prepare_cart"],
+            allowedCapabilities: includePupu
+              ? ["commerce.cart.prepare"]
+              : ["commerce.catalog.search"],
+            nextActions: includePupu ? ["confirm_cart"] : ["search_catalog"],
           },
         },
       });
-      if (includePupu) {
-        writer.write({
-          type: "data-journey",
-          data: {
-            type: "presentation.updated",
-            requestId,
-            presentation: {
-              capability: "pupu",
-              component: "pupu.purchase-plan",
-              mode: "canvas",
-              dataSource: "live",
-              payload: {
-                stage: "cart_ready",
-                title: "朴朴实时商品方案",
-                summary: "本次实时查询结果",
-                meal: "按需采购",
-                people: 1,
-                constraints: ["仅使用实时数据", "首版只读"],
-                decisionSummary: "商品、价格与库存来自朴朴 CLI 实时读取。",
-                products: [
-                  {
-                    productId: "store-1",
-                    name: "鲜牛奶",
-                    specification: "950ml",
-                    unitPrice: 12.9,
-                    quantity: 1,
-                    currency: "CNY",
-                    stockStatus: "in_stock",
-                    collectedAt: "2026-08-10T00:00:00.000Z",
-                  },
-                ],
-                estimatedTotal: 12.9,
-                currency: "CNY",
-                cartVersion: 0,
-                estimatedDelivery: "以朴朴实时页面为准",
-              },
-            },
-          },
-        });
-      }
       writer.write({
         type: "data-journey",
         data: {
@@ -89,18 +61,9 @@ function liveResponse(requestId: string, includePupu = false): Response {
           result: {
             title: "朴朴实时方案",
             summary: "实时查询完成",
-            totalAmount: includePupu ? 12.9 : 0,
+            totalAmount: 0,
             currency: "CNY",
-            items: includePupu
-              ? [
-                  {
-                    id: "store-1",
-                    name: "鲜牛奶",
-                    detail: "950ml",
-                    price: 12.9,
-                  },
-                ]
-              : [],
+            items: [],
           },
         },
       });
@@ -132,6 +95,7 @@ function installLiveFetch(includePupu = false) {
 }
 
 afterEach(() => {
+  window.sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -172,7 +136,7 @@ describe("live Agent home", () => {
     await user.click(screen.getByRole("button", { name: "朴朴搜索商品" }));
 
     expect(
-      await screen.findByRole("heading", { name: "按需采购 · 1 人" }),
+      await screen.findByRole("heading", { name: "朴朴实时商品方案" }),
     ).toBeVisible();
     expect(screen.getByText("¥12.90")).toBeVisible();
     expect(screen.queryByText(/预算/)).toBeNull();

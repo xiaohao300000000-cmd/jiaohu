@@ -88,7 +88,10 @@ test("controlled canvas preserves glass materials and exposes no mutation action
   );
   expect(material.composerBackdrop).toContain("blur(30px)");
   expect(material.css).toContain("prefers-reduced-transparency: reduce");
-  await expect(page.getByRole("button", { name: "加入购物车" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "加入购物车", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "确认加入朴朴购物车", exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "同步到朴朴购物车" }),
   ).toHaveCount(0);

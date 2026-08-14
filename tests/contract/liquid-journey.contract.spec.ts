@@ -17,7 +17,7 @@ test("home promises only current Pupu read-only capabilities", async ({
   await expect(page.getByText(/快递|外卖|确认退款/)).toHaveCount(0);
 });
 
-test("controlled success stream reaches ready through the presentation registry", async ({
+test("controlled success stream renders the PostgreSQL TaskSnapshot FinalPlan", async ({
   page,
 }) => {
   await installJourneyContractRoute(page, "success");
@@ -25,17 +25,20 @@ test("controlled success stream reaches ready through the presentation registry"
   await page.getByRole("button", { name: "朴朴搜索商品" }).click();
 
   const card = page.locator('[data-component="pupu.purchase-plan"]');
-  await expect(card).toHaveAttribute("data-source", "demo");
-  await expect(page.getByText("Agent 决策已完成")).toBeVisible();
+  await expect(card).toHaveAttribute("data-source", "task-snapshot");
+  await expect(page.getByText("Agent 选定的采购方案")).toBeVisible();
   await expect(page.getByTestId("journey-origin")).toHaveAttribute(
     "data-journey-state",
     "ready",
   );
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByText("示例数据")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "加入购物车" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "加入购物车", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "确认加入朴朴购物车", exact: true }),
+  ).toHaveCount(0);
 
-  await page.getByRole("button", { name: "查看商品证据（1 件）" }).click();
+  await page.getByRole("button", { name: "查看已选商品（1 件）" }).click();
   await expect(page.getByText("Contract 牛奶")).toBeVisible();
 });
 

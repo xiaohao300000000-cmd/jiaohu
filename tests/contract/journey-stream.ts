@@ -10,13 +10,6 @@ export async function installJourneyContractRoute(
   page: Page,
   outcome: ContractOutcome = "success",
 ): Promise<void> {
-  await page.route("**/api/pupu/login/status", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ phase: "connected" }),
-    });
-  });
   await page.route("**/api/chat", async (route) => {
     const body = route.request().postDataJSON() as { requestId?: string };
     const requestId = body.requestId || "contract-request";
@@ -29,38 +22,37 @@ export async function installJourneyContractRoute(
 
     if (outcome === "success") {
       stream += dataPart({
-        type: "presentation.updated",
+        type: "task.updated",
         requestId,
-        presentation: {
-          capability: "pupu",
-          component: "pupu.purchase-plan",
-          mode: "canvas",
-          dataSource: "demo",
-          payload: {
-            stage: "cart_ready",
-            title: "Contract 朴朴商品结果",
-            summary: "受控浏览器契约数据",
-            meal: "商品查询",
-            people: 1,
-            constraints: ["浏览器 contract fixture"],
-            decisionSummary: "仅用于验证 UI 协议，不代表真实 Pupu 数据。",
-            products: [
-              {
-                productId: "contract-product",
-                name: "Contract 牛奶",
-                specification: "950ml",
-                unitPrice: 12.9,
-                quantity: 1,
-                currency: "CNY",
-                stockStatus: "in_stock",
-                collectedAt: "2026-08-11T00:00:00.000Z",
-              },
-            ],
-            estimatedTotal: 12.9,
-            currency: "CNY",
-            cartVersion: 0,
-            estimatedDelivery: "contract only",
+        task: {
+          taskId: "contract-task",
+          version: 4,
+          requestText: "朴朴搜索商品",
+          domain: "commerce",
+          goal: "prepare_cart",
+          phase: "awaiting_cart_confirmation",
+          context: {
+            dietaryRequirements: [],
+            requirements: ["浏览器 contract fixture"],
+            selectedProducts: [{
+              productId: "contract-product",
+              name: "Contract 牛奶",
+              quantity: 1,
+              unitPriceCents: 1290,
+              source: "pupu_live",
+            }],
           },
+          finalPlan: {
+            planId: "contract-plan",
+            version: 1,
+            title: "Contract 朴朴商品结果",
+            explanation: "结构化 TaskSnapshot 浏览器契约数据",
+            totalCents: 1290,
+            currency: "CNY",
+          },
+          requestedCapabilities: ["commerce.catalog.search"],
+          allowedCapabilities: ["commerce.cart.prepare"],
+          nextActions: ["confirm_cart"],
         },
       });
       stream += dataPart({
@@ -69,16 +61,9 @@ export async function installJourneyContractRoute(
         result: {
           title: "Contract 朴朴商品结果",
           summary: "受控浏览器契约完成",
-          totalAmount: 12.9,
+          totalAmount: 0,
           currency: "CNY",
-          items: [
-            {
-              id: "contract-product",
-              name: "Contract 牛奶",
-              detail: "950ml",
-              price: 12.9,
-            },
-          ],
+          items: [],
         },
       });
     } else {
