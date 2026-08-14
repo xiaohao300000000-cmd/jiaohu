@@ -17,6 +17,7 @@ CAPABILITY_OPERATIONS = {
         {"catalog.meal-search", "catalog.detail"}
     ),
     "commerce.cart.read": frozenset({"cart.read"}),
+    "task.plan.submit": frozenset({"plan.submit"}),
 }
 
 

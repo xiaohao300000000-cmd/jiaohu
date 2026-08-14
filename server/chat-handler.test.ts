@@ -382,4 +382,116 @@ describe("handleChatRequest", () => {
       },
     });
   });
+
+  it("accepts products only from submit_final_plan, never from summary text", async () => {
+    const store = new InMemoryTaskStore({
+      createId: () => "60000000-0000-4000-8000-000000000001",
+    });
+    const base = testTaskService(store);
+    const submitFinalPlan = vi.fn(async () => {
+      const current = store.resume("60000000-0000-4000-8000-000000000001");
+      return {
+        ...current,
+        version: current.version + 1,
+        phase: "awaiting_cart_confirmation" as const,
+        finalPlan: {
+          planId: "70000000-0000-4000-8000-000000000001",
+          version: 1,
+          title: "结构化方案",
+          explanation: "数据库确认",
+          totalCents: 1290,
+          currency: "CNY" as const,
+        },
+        context: {
+          ...current.context,
+          selectedProducts: [{
+            productId: "store-1",
+            providerProductId: "product-1",
+            name: "鲜牛奶",
+            quantity: 1,
+            unitPriceCents: 1290,
+            source: "pupu_live" as const,
+          }],
+        },
+      };
+    });
+    async function* structuredEvents(): AsyncGenerator<HermesRunEvent> {
+      yield {
+        type: "tool.completed",
+        run_id: "run-structured",
+        tool_name: "pupu_search_catalog",
+        tool_call_id: "call-search",
+        output: null,
+      };
+      yield {
+        type: "tool.completed",
+        run_id: "run-structured",
+        tool_name: "submit_final_plan",
+        tool_call_id: "call-plan",
+        output: null,
+      };
+      yield {
+        type: "run.completed",
+        run_id: "run-structured",
+        output: { summary: "文字里声称选择了另一个商品" },
+      };
+    }
+    const response = await handleChatRequest(
+      new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: [{
+            role: "user",
+            parts: [{ type: "text", text: "买牛奶" }],
+          }],
+        }),
+      }),
+      {
+        taskService: {
+          ...base,
+          startRun: vi.fn(async () => undefined),
+          storeCandidates: vi.fn(async () =>
+            store.resume("60000000-0000-4000-8000-000000000001")),
+          submitFinalPlan,
+          finishRun: vi.fn(async () => undefined),
+        },
+        getPupuReadiness: async () => "ready",
+        createRun: async () => ({ runId: "run-structured" }),
+        streamRun: () => structuredEvents(),
+        readToolArtifact: async ({ toolName }) => ({
+          status: "ok" as const,
+          result: toolName === "submit_final_plan"
+            ? {
+                data: {
+                  plan: {
+                    title: "结构化方案",
+                    explanation: "数据库确认",
+                    items: [{
+                      candidate_id: "80000000-0000-4000-8000-000000000001",
+                      quantity: 1,
+                    }],
+                  },
+                },
+              }
+            : {
+                ...liveEnvelope,
+                data: {
+                  items: [{
+                    ...liveEnvelope.data.items[0],
+                    candidate_id: "80000000-0000-4000-8000-000000000001",
+                  }],
+                },
+              },
+        }),
+      },
+    );
+    const body = await response.text();
+
+    expect(submitFinalPlan).toHaveBeenCalledOnce();
+    expect(body).toContain('"title":"结构化方案"');
+    expect(body).toContain('"productId":"store-1"');
+    expect(body).not.toContain('"productId":"另一个商品"');
+  });
+
 });

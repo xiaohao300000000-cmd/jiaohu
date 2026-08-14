@@ -8,6 +8,7 @@ import type {
 
 const normalizedSkuSchema = z
   .object({
+    candidate_id: z.string().uuid().optional(),
     store_product_id: z.string().min(1),
     product_id: z.string().min(1),
     name: z.string().min(1),
@@ -131,6 +132,7 @@ function extractItems(data: unknown): unknown[] | null {
 
 function toProduct(input: z.infer<typeof normalizedSkuSchema>): ProductSummary {
   return {
+    candidateId: input.candidate_id,
     productId: input.store_product_id,
     providerProductId: input.product_id,
     name: input.name,
@@ -143,41 +145,17 @@ function toProduct(input: z.infer<typeof normalizedSkuSchema>): ProductSummary {
   };
 }
 
-export function selectMealProducts(
-  products: ProductSummary[],
-  summary?: string,
-): ProductSummary[] {
-  if (!summary) return products;
-  const primaryPlan = summary.split(/替换方案|可替换项|一个说明/)[0];
-  const selected = products.filter((product) => primaryPlan.includes(product.name));
-  if (/(?:第一道|三道菜)/.test(summary)) return selected.length === 3 ? selected : [];
-  return selected.length > 0 ? selected : products;
-}
-
 function journeyResult(
-  products: ProductSummary[],
   summary?: string,
 ): JourneyResult {
-  products = selectMealProducts(products, summary);
-  const totalAmount = products.reduce(
-    (sum, product) => sum + product.unitPrice * product.quantity,
-    0,
-  );
   return {
     title: "朴朴实时方案",
     summary:
       summary ||
-      (products.length > 0
-        ? `已找到 ${products.length} 件实时商品`
-        : "实时查询已完成"),
-    totalAmount,
+      "实时查询已完成",
+    totalAmount: 0,
     currency: "CNY",
-    items: products.map((product) => ({
-      id: product.productId,
-      name: product.name,
-      detail: product.specification,
-      price: product.unitPrice * product.quantity,
-    })),
+    items: [],
   };
 }
 
@@ -356,7 +334,7 @@ export function mapHermesEvent(
       return {
         type: "stream.finished",
         requestId: context.requestId,
-        result: journeyResult(context.products, event.output?.summary),
+        result: journeyResult(event.output?.summary),
       };
     case "run.failed": {
       context.terminalFailure = true;

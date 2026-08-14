@@ -9,6 +9,23 @@ import type {
   TaskSnapshot,
 } from "../../src/domain/task-contract";
 import {
+  deterministicCandidateId,
+  submitFinalPlanSchema,
+  type SubmitFinalPlanInput,
+} from "./final-plan";
+
+export interface CandidateInput {
+  candidateId: string;
+  storeProductId: string;
+  providerProductId?: string;
+  name: string;
+  specification?: string;
+  unitPriceCents: number;
+  inStock: boolean;
+  evidenceRef?: string;
+  collectedAt: string;
+}
+import {
   policyFor,
   TaskConflictError,
   type TaskDecision,
@@ -317,5 +334,248 @@ export class PostgresTaskRepository {
       [taskId],
     );
     return this.loadSnapshot(client, ownerId, taskId);
+  }
+  async startRun(
+    client: PoolClient,
+    ownerId: string,
+    taskId: string,
+    taskVersion: number,
+    runId: string,
+  ): Promise<void> {
+    const task = await this.loadSnapshot(client, ownerId, taskId);
+    if (task.version !== taskVersion) {
+      throw new TaskConflictError("task version conflict");
+    }
+    await client.query(
+      `INSERT INTO task_runs (
+        run_id, task_id, task_version, owner_id,
+        allowed_capabilities, status
+      ) VALUES ($1, $2, $3, $4, $5::jsonb, 'running')`,
+      [
+        runId,
+        taskId,
+        taskVersion,
+        ownerId,
+        JSON.stringify(task.allowedCapabilities),
+      ],
+    );
+  }
+
+  async storeCandidates(
+    client: PoolClient,
+    ownerId: string,
+    taskId: string,
+    taskVersion: number,
+    runId: string,
+    toolCallId: string,
+    candidates: CandidateInput[],
+  ): Promise<TaskSnapshot> {
+    const task = await this.loadSnapshot(client, ownerId, taskId);
+    if (task.version !== taskVersion) {
+      throw new TaskConflictError("task version conflict");
+    }
+    const run = await client.query(
+      `SELECT 1 FROM task_runs
+       WHERE run_id = $1 AND task_id = $2 AND task_version = $3
+         AND owner_id = $4 AND status = 'running'`,
+      [runId, taskId, taskVersion, ownerId],
+    );
+    if (run.rowCount !== 1) throw new TaskConflictError("task run conflict");
+
+    for (const candidate of candidates) {
+      const expectedId = deterministicCandidateId(
+        taskId,
+        taskVersion,
+        runId,
+        candidate.storeProductId,
+      );
+      if (candidate.candidateId !== expectedId) {
+        throw new TaskConflictError("candidate identity conflict");
+      }
+      await client.query(
+        `INSERT INTO task_product_candidates (
+          candidate_id, task_id, task_version, run_id, tool_call_id,
+          store_product_id, provider_product_id, name, specification,
+          unit_price_cents, in_stock, evidence_ref, collected_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+        )
+        ON CONFLICT (task_id, run_id, store_product_id) DO NOTHING`,
+        [
+          candidate.candidateId,
+          taskId,
+          taskVersion,
+          runId,
+          toolCallId,
+          candidate.storeProductId,
+          candidate.providerProductId ?? null,
+          candidate.name,
+          candidate.specification ?? null,
+          candidate.unitPriceCents,
+          candidate.inStock,
+          candidate.evidenceRef ?? null,
+          candidate.collectedAt,
+        ],
+      );
+    }
+    return this.loadSnapshot(client, ownerId, taskId);
+  }
+
+  async submitFinalPlan(
+    client: PoolClient,
+    ownerId: string,
+    taskId: string,
+    expectedVersion: number,
+    runId: string,
+    mode: "search" | "quantity_revision",
+    rawInput: SubmitFinalPlanInput,
+  ): Promise<TaskSnapshot> {
+    const input = submitFinalPlanSchema.parse(rawInput);
+    const task = await this.loadSnapshot(client, ownerId, taskId);
+    if (
+      task.version !== expectedVersion ||
+      !task.allowedCapabilities.includes("task.plan.submit")
+    ) {
+      throw new TaskConflictError("task cannot accept a final plan");
+    }
+    const run = await client.query(
+      `SELECT 1 FROM task_runs
+       WHERE run_id = $1 AND task_id = $2 AND owner_id = $3
+         AND task_version = $4 AND status = 'running'`,
+      [runId, taskId, ownerId, expectedVersion],
+    );
+    if (run.rowCount !== 1) throw new TaskConflictError("task run conflict");
+
+    const ids = input.items.map((item) => item.candidateId);
+    const candidates = await client.query<{
+      candidate_id: string;
+      store_product_id: string;
+      provider_product_id: string | null;
+      name: string;
+      unit_price_cents: number;
+      in_stock: boolean;
+    }>(
+      `SELECT DISTINCT
+        c.candidate_id, c.store_product_id, c.provider_product_id,
+        c.name, c.unit_price_cents, c.in_stock
+      FROM task_product_candidates c
+      WHERE c.task_id = $1
+        AND c.candidate_id = ANY($2::uuid[])
+        AND (
+          c.run_id = $3 OR (
+            $4 = 'quantity_revision' AND EXISTS (
+              SELECT 1
+              FROM final_plan_items i
+              JOIN final_plans p ON p.plan_id = i.plan_id
+              WHERE p.task_id = $1
+                AND p.status = 'current'
+                AND i.candidate_id = c.candidate_id
+            )
+          )
+        )`,
+      [taskId, ids, runId, mode],
+    );
+    if (
+      candidates.rows.length !== ids.length ||
+      candidates.rows.some((candidate) => !candidate.in_stock)
+    ) {
+      throw new TaskConflictError("final plan contains unavailable candidates");
+    }
+    const byId = new Map(
+      candidates.rows.map((candidate) => [candidate.candidate_id, candidate]),
+    );
+    let totalCents = 0;
+    const lines = input.items.map((item, position) => {
+      const candidate = byId.get(item.candidateId)!;
+      const lineTotalCents = candidate.unit_price_cents * item.quantity;
+      if (!Number.isSafeInteger(lineTotalCents)) {
+        throw new TaskConflictError("final plan total is unsafe");
+      }
+      totalCents += lineTotalCents;
+      if (!Number.isSafeInteger(totalCents)) {
+        throw new TaskConflictError("final plan total is unsafe");
+      }
+      return { item, position, candidate, lineTotalCents };
+    });
+
+    const versionResult = await client.query<{ next: string }>(
+      `SELECT COALESCE(MAX(plan_version), 0) + 1 AS next
+       FROM final_plans WHERE task_id = $1`,
+      [taskId],
+    );
+    const planVersion = Number(versionResult.rows[0].next);
+    const planId = crypto.randomUUID();
+    await client.query(
+      `UPDATE final_plans SET status = 'superseded'
+       WHERE task_id = $1 AND status = 'current'`,
+      [taskId],
+    );
+    await client.query(
+      `INSERT INTO final_plans (
+        plan_id, task_id, plan_version, task_version, run_id,
+        title, explanation, currency, total_cents, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'CNY', $8, 'current')`,
+      [
+        planId,
+        taskId,
+        planVersion,
+        expectedVersion + 1,
+        runId,
+        input.title,
+        input.explanation,
+        totalCents,
+      ],
+    );
+    for (const line of lines) {
+      await client.query(
+        `INSERT INTO final_plan_items (
+          plan_id, candidate_id, position, quantity,
+          unit_price_cents, line_total_cents
+        ) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          planId,
+          line.item.candidateId,
+          line.position,
+          line.item.quantity,
+          line.candidate.unit_price_cents,
+          line.lineTotalCents,
+        ],
+      );
+    }
+    const updated = await client.query(
+      `UPDATE tasks SET
+        version = version + 1,
+        phase = 'awaiting_cart_confirmation',
+        updated_at = now()
+      WHERE task_id = $1 AND owner_id = $2 AND version = $3`,
+      [taskId, ownerId, expectedVersion],
+    );
+    if (updated.rowCount !== 1) {
+      throw new TaskConflictError("task version conflict");
+    }
+    await client.query(
+      `UPDATE task_confirmations SET status = 'invalidated'
+       WHERE task_id = $1 AND status = 'active'`,
+      [taskId],
+    );
+    await client.query(
+      `UPDATE task_runs SET status = 'completed', completed_at = now()
+       WHERE run_id = $1`,
+      [runId],
+    );
+    return this.loadSnapshot(client, ownerId, taskId);
+  }
+
+  async finishRun(
+    client: PoolClient,
+    ownerId: string,
+    runId: string,
+    status: "completed" | "failed" | "cancelled",
+  ): Promise<void> {
+    await client.query(
+      `UPDATE task_runs SET status = $3, completed_at = now()
+       WHERE run_id = $1 AND owner_id = $2 AND status = 'running'`,
+      [runId, ownerId, status],
+    );
   }
 }

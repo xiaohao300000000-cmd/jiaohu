@@ -137,16 +137,6 @@ app.post(
             });
           },
           cleanupPupuScope: (sessionId) => scopeTickets.remove(sessionId),
-          registerPupuPlan: async (_sessionId, runId, products, task) => {
-            const token = readPupuSessionCookie(request.headers.get("cookie"));
-            if (!token) return;
-            const session = await sessionStore.lookup(token);
-            if (!session) return;
-            const storedSelection = task.context.addressBinding;
-            if (!storedSelection || storedSelection.placeZip === undefined) return;
-            const selection = { ...storedSelection, placeZip: storedSelection.placeZip };
-            cartController.registerPlan(session.accountId, runId, selection, products);
-          },
         });
       if (owner.setCookie) chatResponse.headers.set("set-cookie", owner.setCookie);
       await sendWebResponse(chatResponse, res);

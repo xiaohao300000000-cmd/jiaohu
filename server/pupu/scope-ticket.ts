@@ -9,6 +9,7 @@ const PUPU_READ_CAPABILITIES = new Set<TaskCapability>([
   "commerce.catalog.search",
   "commerce.catalog.meal-search",
   "commerce.cart.read",
+  "task.plan.submit",
 ]);
 
 export interface PupuScopeTicketInput {

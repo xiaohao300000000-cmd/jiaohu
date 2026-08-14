@@ -11,6 +11,7 @@ import type { TaskSnapshot } from "../src/domain/task-contract";
 import { getHermesConfig } from "./config";
 import { createHermesRun, streamHermesRun } from "./hermes-client";
 import { buildHermesTaskContract } from "./tasks/hermes-task-contract";
+import { submitFinalPlanSchema } from "./tasks/final-plan";
 import { TaskConflictError } from "./tasks/task-coordinator";
 import type { TaskApplicationService } from "./tasks/task-application-service";
 import {
@@ -23,7 +24,10 @@ export type PupuReadiness = "ready" | "awaiting_login" | "awaiting_address";
 
 interface ChatDependencies {
   taskService?: Pick<TaskApplicationService, "resolve" | "get" | "transition"> & {
-    attachProducts?: (taskId: string, expectedVersion: number, products: ReturnType<typeof taskProducts>) => Promise<TaskSnapshot>;
+    startRun?: TaskApplicationService["startRun"];
+    storeCandidates?: TaskApplicationService["storeCandidates"];
+    submitFinalPlan?: TaskApplicationService["submitFinalPlan"];
+    finishRun?: TaskApplicationService["finishRun"];
   };
   ownerId?: string;
   getPupuReadiness?: (request: Request, task: TaskSnapshot) => Promise<PupuReadiness>;
@@ -46,12 +50,6 @@ interface ChatDependencies {
     task: TaskSnapshot,
   ) => Promise<void>;
   cleanupPupuScope?: (sessionId: string) => Promise<void>;
-  registerPupuPlan?: (
-    sessionId: string,
-    runId: string,
-    products: ProductSummary[],
-    task: TaskSnapshot,
-  ) => void | Promise<void>;
 }
 
 
@@ -138,15 +136,55 @@ function readinessPresentation(readiness: Exclude<PupuReadiness, "ready">): Jour
   };
 }
 
-function taskProducts(products: ProductSummary[]) {
-  return products.map((product) => ({
-    productId: product.productId,
-    providerProductId: product.providerProductId,
-    name: product.name,
-    quantity: product.quantity,
-    unitPriceCents: Math.round(product.unitPrice * 100),
-    source: "pupu_live" as const,
-  }));
+function finalPlanInput(output: unknown) {
+  let value = output;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const data = (value as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return null;
+  const plan = (data as { plan?: unknown }).plan;
+  if (!plan || typeof plan !== "object") return null;
+  const raw = plan as {
+    title?: unknown;
+    explanation?: unknown;
+    items?: unknown;
+  };
+  if (!Array.isArray(raw.items)) return null;
+  return submitFinalPlanSchema.safeParse({
+    title: raw.title,
+    explanation: raw.explanation,
+    items: raw.items.map((item) => {
+      const entry = item as Record<string, unknown>;
+      return {
+        candidateId: entry.candidate_id,
+        quantity: entry.quantity,
+      };
+    }),
+  });
+}
+
+function taskCandidates(products: ProductSummary[]) {
+  return products.map((product) => {
+    if (!product.candidateId) {
+      throw new TaskConflictError("candidate identity is missing");
+    }
+    return {
+      candidateId: product.candidateId,
+      storeProductId: product.productId,
+      providerProductId: product.providerProductId,
+      name: product.name,
+      specification: product.specification,
+      unitPriceCents: Math.round(product.unitPrice * 100),
+      inStock: product.stockStatus !== "out_of_stock",
+      collectedAt: product.collectedAt,
+    };
+  });
 }
 
 export async function handleChatRequest(
@@ -247,6 +285,9 @@ export async function handleChatRequest(
           sessionId,
           request.signal,
         );
+        await taskService.startRun?.({
+          ownerId, taskId: task.taskId, taskVersion: task.version, runId,
+        });
         writer.write({ type: "message-metadata", messageMetadata: { runId } });
         const context = createHermesEventContext(sessionId, task.requestText, runId);
         const started = mapHermesEvent(
@@ -260,7 +301,8 @@ export async function handleChatRequest(
           let event = sourceEvent;
           if (
             sourceEvent.type === "tool.completed" &&
-            sourceEvent.tool_name.startsWith("pupu_")
+            (sourceEvent.tool_name.startsWith("pupu_") ||
+              sourceEvent.tool_name === "submit_final_plan")
           ) {
             toolSequence += 1;
             const artifact = await artifactReader({
@@ -283,28 +325,81 @@ export async function handleChatRequest(
           }
           const mapped = mapHermesEvent(event, context);
           if (
-            event.type === "run.completed" &&
-            context.products.length > 0 &&
-            task.allowedCapabilities.some((capability) =>
-              capability === "commerce.catalog.search" ||
-              capability === "commerce.catalog.meal-search")
+            event.type === "tool.completed" &&
+            (
+              event.tool_name === "pupu_search_catalog" ||
+              event.tool_name === "pupu_search_meal_catalog"
+            ) &&
+            taskService.storeCandidates
           ) {
-            if (!taskService.attachProducts) continue;
-            task = await taskService.attachProducts(
-              task.taskId,
-              task.version,
-              taskProducts(context.products),
-            );
+            task = await taskService.storeCandidates({
+              ownerId,
+              taskId: task.taskId,
+              taskVersion: task.version,
+              runId,
+              toolCallId: event.tool_call_id,
+              candidates: taskCandidates(context.products),
+            });
+          }
+          if (
+            event.type === "tool.completed" &&
+            event.tool_name === "submit_final_plan" &&
+            taskService.submitFinalPlan
+          ) {
+            const parsed = finalPlanInput(event.output);
+            if (!parsed?.success) {
+              throw new TaskConflictError("invalid structured final plan");
+            }
+            task = await taskService.submitFinalPlan({
+              ownerId,
+              taskId: task.taskId,
+              expectedVersion: task.version,
+              runId,
+              mode:
+                task.phase === "editing_plan"
+                  ? "quantity_revision"
+                  : "search",
+              input: parsed.data,
+            });
             writer.write({
               type: "data-journey",
               data: { type: "task.updated", requestId: sessionId, task },
             });
-            await dependencies.registerPupuPlan?.(
-              sessionId,
+          }
+          if (
+            event.type === "run.completed" &&
+            taskService.submitFinalPlan &&
+            task.allowedCapabilities.includes("task.plan.submit") &&
+            !task.finalPlan
+          ) {
+            await taskService.finishRun?.({
+              ownerId,
               runId,
-              context.products,
-              task,
-            );
+              status: "failed",
+            });
+            writer.write({
+              type: "data-journey",
+              data: {
+                type: "stream.failed",
+                requestId: sessionId,
+                error: {
+                  kind: "invalid_result",
+                  message: "Hermes 未提交结构化商品方案。",
+                },
+              },
+            });
+            continue;
+          }
+          if (event.type === "run.completed") {
+            await taskService.finishRun?.({
+              ownerId,
+              runId,
+              status: "completed",
+            });
+          } else if (event.type === "run.failed") {
+            await taskService.finishRun?.({ ownerId, runId, status: "failed" });
+          } else if (event.type === "run.cancelled") {
+            await taskService.finishRun?.({ ownerId, runId, status: "cancelled" });
           }
           if (!mapped) continue;
           writer.write({ type: "data-journey", data: mapped });

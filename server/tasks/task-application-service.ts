@@ -93,4 +93,73 @@ export class TaskApplicationService {
         command.binding,
       ));
   }
+  startRun(command: {
+    ownerId: string;
+    taskId: string;
+    taskVersion: number;
+    runId: string;
+  }): Promise<void> {
+    return withTransaction(this.pool, (client) =>
+      this.repository.startRun(
+        client,
+        command.ownerId,
+        command.taskId,
+        command.taskVersion,
+        command.runId,
+      ));
+  }
+
+  storeCandidates(command: {
+    ownerId: string;
+    taskId: string;
+    taskVersion: number;
+    runId: string;
+    toolCallId: string;
+    candidates: import("./task-repository").CandidateInput[];
+  }): Promise<TaskSnapshot> {
+    return withTransaction(this.pool, (client) =>
+      this.repository.storeCandidates(
+        client,
+        command.ownerId,
+        command.taskId,
+        command.taskVersion,
+        command.runId,
+        command.toolCallId,
+        command.candidates,
+      ));
+  }
+
+  submitFinalPlan(command: {
+    ownerId: string;
+    taskId: string;
+    expectedVersion: number;
+    runId: string;
+    mode: "search" | "quantity_revision";
+    input: import("./final-plan").SubmitFinalPlanInput;
+  }): Promise<TaskSnapshot> {
+    return withTransaction(this.pool, (client) =>
+      this.repository.submitFinalPlan(
+        client,
+        command.ownerId,
+        command.taskId,
+        command.expectedVersion,
+        command.runId,
+        command.mode,
+        command.input,
+      ));
+  }
+
+  finishRun(command: {
+    ownerId: string;
+    runId: string;
+    status: "completed" | "failed" | "cancelled";
+  }): Promise<void> {
+    return withTransaction(this.pool, (client) =>
+      this.repository.finishRun(
+        client,
+        command.ownerId,
+        command.runId,
+        command.status,
+      ));
+  }
 }

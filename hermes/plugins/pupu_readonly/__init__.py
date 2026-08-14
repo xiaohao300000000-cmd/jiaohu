@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 from .provider import persist_run_result, run_pupu
+from .final_plan import add_candidate_ids, submit_final_plan
 
 TOOLSET = "pupu_readonly"
 
@@ -89,6 +90,31 @@ TOOL_DEFINITIONS = [
 
 
 def register(ctx: Any) -> None:
+    final_schema = _schema(
+        "submit_final_plan",
+        "Submit the one authoritative structured product plan.",
+        {
+            "title": {"type": "string", "minLength": 1, "maxLength": 120},
+            "explanation": {"type": "string", "minLength": 1, "maxLength": 2000},
+            "items": {
+                "type": "array", "minItems": 1, "maxItems": 40,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "candidate_id": {"type": "string", "format": "uuid"},
+                        "quantity": {"type": "integer", "minimum": 1, "maximum": 20},
+                    },
+                    "required": ["candidate_id", "quantity"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        ["title", "explanation", "items"],
+    )
+    ctx.register_tool(
+        name="submit_final_plan", toolset=TOOLSET, schema=final_schema,
+        handler=submit_final_plan, description=final_schema["description"],
+    )
     for name, operation, schema in TOOL_DEFINITIONS:
         def handler(params, _operation=operation, _name=name, **kwargs):
             task_id = kwargs.get("task_id")
@@ -98,12 +124,21 @@ def register(ctx: Any) -> None:
             if isinstance(task_id, str) and task_id:
                 arguments["_trusted_task_id"] = task_id
             result = run_pupu(_operation, arguments)
+            run_id = kwargs.get("run_id")
+            if (
+                _operation in {"catalog.search", "catalog.meal-search"}
+                and isinstance(task_id, str) and task_id
+                and isinstance(run_id, str) and run_id
+            ):
+                result = add_candidate_ids(
+                    result, session_id=task_id, run_id=run_id,
+                    operation=_operation,
+                )
             if (
                 isinstance(task_id, str)
                 and task_id
                 and os.environ.get("PUPU_RESULT_DIR")
             ):
-                run_id = kwargs.get("run_id")
                 tool_call_id = kwargs.get("tool_call_id")
                 persist_run_result(
                     result,

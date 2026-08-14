@@ -23,6 +23,7 @@ export interface AgentUIEvent<TPayload> {
 }
 
 export interface ProductSummary {
+  candidateId?: string;
   productId: string;
   providerProductId?: string;
   name: string;
