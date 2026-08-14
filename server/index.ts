@@ -111,18 +111,17 @@ app.post(
       const chatResponse = await handleChatRequest(request, {
           taskService,
           ownerId: owner.ownerId,
-          getPupuReadiness: async (source) => {
+          getPupuReadiness: async (source, currentTask) => {
             const token = readPupuSessionCookie(source.headers.get("cookie"));
             const session = await sessionStore.lookup(token);
             if (!session) return "awaiting_login";
-            const selection = addressController.getSelection(session.accountId);
-            return selection ? "ready" : "awaiting_address";
+            return currentTask.context.addressBinding ? "ready" : "awaiting_address";
           },
           preparePupuScope: async (source, sessionId, task) => {
             const token = readPupuSessionCookie(source.headers.get("cookie"));
             const session = await sessionStore.lookup(token);
             if (!session) throw new Error("Pupu browser session is required");
-            const selection = addressController.getSelection(session.accountId);
+            const selection = task.context.addressBinding;
             if (!selection) throw new Error("Pupu delivery address selection is required");
             await scopeTickets.issue({
               sessionId,
@@ -138,13 +137,14 @@ app.post(
             });
           },
           cleanupPupuScope: (sessionId) => scopeTickets.remove(sessionId),
-          registerPupuPlan: async (_sessionId, runId, products) => {
+          registerPupuPlan: async (_sessionId, runId, products, task) => {
             const token = readPupuSessionCookie(request.headers.get("cookie"));
             if (!token) return;
             const session = await sessionStore.lookup(token);
             if (!session) return;
-            const selection = addressController.getSelection(session.accountId);
-            if (!selection) return;
+            const storedSelection = task.context.addressBinding;
+            if (!storedSelection || storedSelection.placeZip === undefined) return;
+            const selection = { ...storedSelection, placeZip: storedSelection.placeZip };
             cartController.registerPlan(session.accountId, runId, selection, products);
           },
         });
@@ -252,6 +252,8 @@ app.use(
         await handlePupuAddressRequest(request, {
           sessionStore,
           controller: addressController,
+          taskService,
+          ownerId: resolveTaskOwner(request).ownerId,
           config: loginConfig,
         }),
         res,
@@ -285,7 +287,7 @@ app.use(
     try {
       await sendWebResponse(
         await handlePupuCommerceRequest(request, {
-          taskCoordinator, sessionStore, addressController, cartController, checkoutController, config: loginConfig,
+          taskCoordinator, taskService, ownerId: resolveTaskOwner(request).ownerId, sessionStore, cartController, checkoutController, config: loginConfig,
         }),
         res,
       );

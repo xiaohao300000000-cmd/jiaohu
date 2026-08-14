@@ -32,7 +32,8 @@ const checkoutPreview = {
 };
 const deps = {
   sessionStore: { resolve: vi.fn().mockResolvedValue(session) },
-  addressController: { getSelection: vi.fn().mockReturnValue(binding) },
+  taskService: { get: vi.fn().mockResolvedValue({ context: { addressBinding: binding } }) },
+  ownerId: "owner-a",
   cartController: {
     preview: vi.fn().mockReturnValue(cartPreview),
     commit: vi.fn().mockResolvedValue({

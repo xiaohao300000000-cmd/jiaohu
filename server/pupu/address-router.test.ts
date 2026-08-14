@@ -15,13 +15,15 @@ describe("Pupu address router", () => {
     const controller = { list: vi.fn().mockResolvedValue({
       addresses: [{ id: "receiver-a", label: "地址 1", region: "已保存区域",
         detailHint: "3 栋 1201", phoneSuffix: "" }],
-    }), select: vi.fn() };
+    }), resolveSelection: vi.fn() };
     const response = await handlePupuAddressRequest(
       new Request("http://localhost/api/pupu/addresses", {
         headers: { cookie: `pupu_session=${session.token}` },
       }),
       {
         sessionStore, controller: controller as never,
+        taskService: { bindAddress: vi.fn().mockResolvedValue({ taskId: "10000000-0000-4000-8000-000000000010", version: 3 }) } as never,
+        ownerId: "owner-a",
         config: { cliPath: "/opt/pupu", accountsRoot: join(root, "accounts"),
           dataRoot: join(root, "data") },
       },
@@ -42,7 +44,7 @@ describe("Pupu address router", () => {
       root: join(root, "sessions"), accountsRoot: join(root, "accounts"),
     });
     const session = await sessionStore.resolve(undefined);
-    const controller = { list: vi.fn(), select: vi.fn().mockResolvedValue({
+    const controller = { list: vi.fn(), resolveSelection: vi.fn().mockResolvedValue({
       receiverId: "receiver-a", storeId: "store-a",
       placeId: "place-a", placeZip: 350100,
     }) };
@@ -51,16 +53,18 @@ describe("Pupu address router", () => {
         method: "POST", headers: {
           cookie: `pupu_session=${session.token}`,
           "content-type": "application/json",
-        }, body: JSON.stringify({ receiverId: "receiver-a" }),
+        }, body: JSON.stringify({ taskId: "10000000-0000-4000-8000-000000000010", taskVersion: 2, receiverId: "receiver-a" }),
       }),
       {
         sessionStore, controller: controller as never,
+        taskService: { bindAddress: vi.fn().mockResolvedValue({ taskId: "10000000-0000-4000-8000-000000000010", version: 3 }) } as never,
+        ownerId: "owner-a",
         config: { cliPath: "/opt/pupu", accountsRoot: join(root, "accounts"),
           dataRoot: join(root, "data") },
       },
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ selected: true, addressId: "receiver-a" });
-    expect(controller.select).toHaveBeenCalledWith(expect.objectContaining({ accountId: session.accountId }), "receiver-a");
+    expect(await response.json()).toEqual({ task: { taskId: "10000000-0000-4000-8000-000000000010", version: 3 } });
+    expect(controller.resolveSelection).toHaveBeenCalledWith(expect.objectContaining({ accountId: session.accountId }), "receiver-a");
   });
 });

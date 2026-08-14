@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { migrate } from "../db/migrate";
 import { createDatabasePool } from "../db/pool";
 import { TaskApplicationService } from "./task-application-service";
-import { TaskCoordinator } from "./task-coordinator";
+import { TaskConflictError, TaskCoordinator } from "./task-coordinator";
 import { PostgresTaskRepository, TaskNotFoundError } from "./task-repository";
 
 const url = process.env.TEST_DATABASE_URL;
@@ -61,4 +61,105 @@ describeDb("TaskApplicationService", () => {
     await expect(service.get("owner-b", created.taskId))
       .rejects.toBeInstanceOf(TaskNotFoundError);
   });
+  it("persists address binding and locks it to the provider account", async () => {
+    const service = new TaskApplicationService(
+      pool!,
+      new PostgresTaskRepository(),
+      new TaskCoordinator(),
+      () => "20000000-0000-4000-8000-000000000002",
+    );
+    const created = await service.resolve({
+      ownerId: "owner-a",
+      input: "买牛奶",
+    });
+    const bound = await service.bindAddress({
+      ownerId: "owner-a",
+      taskId: created.taskId,
+      expectedVersion: created.version,
+      providerAccountId: "account-a",
+      binding: {
+        receiverId: "receiver-a",
+        storeId: "store-a",
+        placeId: "place-a",
+        placeZip: 350100,
+      },
+    });
+    const restarted = new TaskApplicationService(
+      pool!,
+      new PostgresTaskRepository(),
+      new TaskCoordinator(),
+    );
+
+    expect(bound.version).toBe(2);
+    expect(await restarted.get("owner-a", created.taskId)).toEqual(bound);
+    expect(bound.context.addressBinding).toEqual({
+      receiverId: "receiver-a",
+      storeId: "store-a",
+      placeId: "place-a",
+      placeZip: 350100,
+    });
+    await pool!.query(
+      `INSERT INTO task_runs (
+        run_id, task_id, task_version, owner_id,
+        allowed_capabilities, status
+      ) VALUES ('run-address', $1, 2, 'owner-a', '[]'::jsonb, 'completed')`,
+      [created.taskId],
+    );
+    await pool!.query(
+      `INSERT INTO final_plans (
+        plan_id, task_id, plan_version, task_version, run_id,
+        title, explanation, currency, total_cents, status
+      ) VALUES (
+        '30000000-0000-4000-8000-000000000001', $1, 1, 2,
+        'run-address', 'plan', 'plan', 'CNY', 100, 'current'
+      )`,
+      [created.taskId],
+    );
+    await pool!.query(
+      `INSERT INTO task_confirmations (
+        confirmation_id, task_id, kind, task_version, plan_id,
+        plan_version, binding_version, payload_hash, provider_payload,
+        status, expires_at
+      ) VALUES (
+        '40000000-0000-4000-8000-000000000001', $1, 'cart', 2,
+        '30000000-0000-4000-8000-000000000001', 1, 1, 'hash',
+        '{}'::jsonb, 'active', now() + interval '5 minutes'
+      )`,
+      [created.taskId],
+    );
+    const rebound = await service.bindAddress({
+      ownerId: "owner-a",
+      taskId: created.taskId,
+      expectedVersion: bound.version,
+      providerAccountId: "account-a",
+      binding: {
+        receiverId: "receiver-next",
+        storeId: "store-next",
+        placeId: "place-next",
+        placeZip: 350102,
+      },
+    });
+    const invalidated = await pool!.query(
+      `SELECT
+        (SELECT status FROM final_plans WHERE task_id = $1) AS plan_status,
+        (SELECT status FROM task_confirmations WHERE task_id = $1) AS confirmation_status`,
+      [created.taskId],
+    );
+    expect(invalidated.rows[0]).toEqual({
+      plan_status: "invalidated",
+      confirmation_status: "invalidated",
+    });
+    await expect(service.bindAddress({
+      ownerId: "owner-a",
+      taskId: created.taskId,
+      expectedVersion: rebound.version,
+      providerAccountId: "account-b",
+      binding: {
+        receiverId: "receiver-b",
+        storeId: "store-b",
+        placeId: "place-b",
+      },
+    })).rejects.toBeInstanceOf(TaskConflictError);
+  });
+
 });

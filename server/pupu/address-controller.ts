@@ -23,7 +23,6 @@ export class PupuAddressController {
   private readonly execute: typeof executeCommerceCommand;
   private readonly addresses = new Map<string, Map<string, ProviderAddress>>();
   private readonly addressExpiry = new Map<string, number>();
-  private readonly selections = new Map<string, AddressSelection>();
   private readonly now: () => number;
   private readonly cacheTtlMs: number;
   constructor(options: Options = {}) {
@@ -45,17 +44,13 @@ export class PupuAddressController {
     this.addressExpiry.set(scope.accountId, this.now() + this.cacheTtlMs);
     return { addresses: addresses.map(redact) };
   }
-  async select(scope: PupuCommerceScope, receiverId: string): Promise<AddressSelection> {
+  async resolveSelection(scope: PupuCommerceScope, receiverId: string): Promise<AddressSelection> {
     const address = this.addresses.get(scope.accountId)?.get(receiverId);
     if (!address || !isUsable(address)) throw new Error("Saved address is not available for this account");
     const selection = {
       receiverId: address.id, storeId: address.service_store_id,
       placeId: address.place.id, placeZip: address.place.zip,
     };
-    this.selections.set(scope.accountId, selection);
     return selection;
-  }
-  getSelection(accountId: string): AddressSelection | undefined {
-    return this.selections.get(accountId);
   }
 }

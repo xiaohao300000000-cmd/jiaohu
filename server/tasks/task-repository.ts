@@ -264,4 +264,58 @@ export class PostgresTaskRepository {
     }
     return this.loadSnapshot(client, ownerId, taskId);
   }
+  async bindAddress(
+    client: PoolClient,
+    ownerId: string,
+    taskId: string,
+    expectedVersion: number,
+    providerAccountId: string,
+    binding: TaskAddressBinding,
+  ): Promise<TaskSnapshot> {
+    const updated = await client.query(
+      `UPDATE tasks SET
+        provider_account_id = $4,
+        version = version + 1,
+        updated_at = now()
+      WHERE task_id = $1
+        AND owner_id = $2
+        AND version = $3
+        AND (provider_account_id IS NULL OR provider_account_id = $4)`,
+      [taskId, ownerId, expectedVersion, providerAccountId],
+    );
+    if (updated.rowCount !== 1) {
+      throw new TaskConflictError("task owner, provider, or version conflict");
+    }
+    await client.query(
+      `INSERT INTO task_address_bindings (
+        task_id, receiver_id, store_id, place_id, place_zip,
+        binding_version, bound_at
+      ) VALUES ($1, $2, $3, $4, $5, 1, now())
+      ON CONFLICT (task_id) DO UPDATE SET
+        receiver_id = EXCLUDED.receiver_id,
+        store_id = EXCLUDED.store_id,
+        place_id = EXCLUDED.place_id,
+        place_zip = EXCLUDED.place_zip,
+        binding_version = task_address_bindings.binding_version + 1,
+        bound_at = now()`,
+      [
+        taskId,
+        binding.receiverId,
+        binding.storeId,
+        binding.placeId,
+        binding.placeZip ?? null,
+      ],
+    );
+    await client.query(
+      `UPDATE final_plans SET status = 'invalidated'
+       WHERE task_id = $1 AND status = 'current'`,
+      [taskId],
+    );
+    await client.query(
+      `UPDATE task_confirmations SET status = 'invalidated'
+       WHERE task_id = $1 AND status = 'active'`,
+      [taskId],
+    );
+    return this.loadSnapshot(client, ownerId, taskId);
+  }
 }

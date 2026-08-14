@@ -76,4 +76,21 @@ export class TaskApplicationService {
       );
     });
   }
+  bindAddress(command: {
+    ownerId: string;
+    taskId: string;
+    expectedVersion: number;
+    providerAccountId: string;
+    binding: import("../../src/domain/task-contract").TaskAddressBinding;
+  }): Promise<TaskSnapshot> {
+    return withTransaction(this.pool, (client) =>
+      this.repository.bindAddress(
+        client,
+        command.ownerId,
+        command.taskId,
+        command.expectedVersion,
+        command.providerAccountId,
+        command.binding,
+      ));
+  }
 }

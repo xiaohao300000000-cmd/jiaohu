@@ -26,7 +26,7 @@ interface ChatDependencies {
     attachProducts?: (taskId: string, expectedVersion: number, products: ReturnType<typeof taskProducts>) => Promise<TaskSnapshot>;
   };
   ownerId?: string;
-  getPupuReadiness?: (request: Request) => Promise<PupuReadiness>;
+  getPupuReadiness?: (request: Request, task: TaskSnapshot) => Promise<PupuReadiness>;
   createRun?: (
     input: string,
     sessionId: string,
@@ -209,7 +209,7 @@ export async function handleChatRequest(
       let scopePrepared = false;
       try {
         if (needsPupu(task)) {
-          const readiness = await (dependencies.getPupuReadiness?.(request) ?? Promise.resolve("ready"));
+          const readiness = await (dependencies.getPupuReadiness?.(request, task) ?? Promise.resolve("ready"));
           if (readiness === "ready" &&
               (task.phase === "awaiting_login" || task.phase === "awaiting_address")) {
             task = await taskService.transition({ ownerId, taskId: task.taskId, expectedVersion: task.version, phase: "searching_catalog" });

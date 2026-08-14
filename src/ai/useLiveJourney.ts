@@ -262,7 +262,9 @@ export function useLiveJourney(options: UseLiveJourneyOptions = {}) {
     if (!selected || !heldTask.current) return;
     showAddresses("selecting", [selected]);
     try {
-      await addressClient.select(receiverId);
+      const task = activeTask.current;
+      if (!task) return;
+      activeTask.current = await addressClient.select(task, receiverId);
       showAddresses("selected", [selected]);
       await resumeHeldTask();
     } catch {

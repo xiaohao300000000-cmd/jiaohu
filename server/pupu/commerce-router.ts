@@ -1,7 +1,7 @@
 import type { TaskSnapshot } from "../../src/domain/task-contract";
 import type { PupuLoginConfig } from "../config";
 import type { InMemoryTaskStore } from "../tasks/in-memory-task-store";
-import type { PupuAddressController } from "./address-controller";
+import type { TaskApplicationService } from "../tasks/task-application-service";
 import type { PupuCartController } from "./cart-controller";
 import type { PupuCheckoutController } from "./checkout-controller";
 import { assertMutationRequest, noStoreHeaders, readPupuSessionCookie } from "./http-security";
@@ -10,7 +10,8 @@ import type { PupuSessionStore } from "./session-store";
 interface Dependencies {
   taskCoordinator: InMemoryTaskStore;
   sessionStore: PupuSessionStore;
-  addressController: Pick<PupuAddressController, "getSelection">;
+  taskService: Pick<TaskApplicationService, "get">;
+  ownerId: string;
   cartController: PupuCartController;
   checkoutController: PupuCheckoutController;
   config: Pick<PupuLoginConfig, "cliPath" | "accountsRoot" | "dataRoot" | "publicOrigin">;
@@ -60,8 +61,6 @@ export async function handlePupuCommerceRequest(
   if (!token) return json({ error: { code: "session_required" } }, 401);
   const session = await dependencies.sessionStore.resolve(token);
   if (session.created) return json({ error: { code: "session_invalid" } }, 401);
-  const binding = dependencies.addressController.getSelection(session.accountId);
-  if (!binding) return json({ error: { code: "address_required" } }, 409);
   const scope = {
     cliPath: dependencies.config.cliPath,
     accountId: session.accountId,
@@ -74,6 +73,15 @@ export async function handlePupuCommerceRequest(
 
   try {
     const { taskId, taskVersion } = bodyTask(body);
+    const authoritative = await dependencies.taskService.get(
+      dependencies.ownerId,
+      taskId,
+    );
+    const storedBinding = authoritative.context.addressBinding;
+    if (!storedBinding || storedBinding.placeZip === undefined) {
+      return json({ error: { code: "address_required" } }, 409);
+    }
+    const binding = { ...storedBinding, placeZip: storedBinding.placeZip };
     if (pathname.endsWith("/cart/preview")) {
       dependencies.taskCoordinator.assertPhase(
         taskId,

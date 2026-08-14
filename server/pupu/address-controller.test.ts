@@ -27,13 +27,10 @@ describe("PupuAddressController", () => {
   it("binds only an address returned for the current account", async () => {
     const controller = new PupuAddressController({ execute: vi.fn().mockResolvedValue(provider) });
     await controller.list(scope);
-    expect(await controller.select(scope, "receiver-a")).toMatchObject({
+    expect(await controller.resolveSelection(scope, "receiver-a")).toMatchObject({
       receiverId: "receiver-a", storeId: "store-a", placeId: "place-a", placeZip: 350100,
     });
-    expect(controller.getSelection(scope.accountId)).toMatchObject({
-      receiverId: "receiver-a", storeId: "store-a", placeId: "place-a",
-    });
-    await expect(controller.select(scope, "receiver-other")).rejects.toThrow("address");
+    await expect(controller.resolveSelection(scope, "receiver-other")).rejects.toThrow("address");
   });
 
   it("keeps account address caches isolated", async () => {
@@ -47,8 +44,8 @@ describe("PupuAddressController", () => {
     const other = { ...scope, accountId: "acct_abcdefabcdefabcdefabcdefabcdefab" };
     await controller.list(scope);
     await controller.list(other);
-    await expect(controller.select(scope, "receiver-b")).rejects.toThrow("address");
-    await expect(controller.select(other, "receiver-a")).rejects.toThrow("address");
+    await expect(controller.resolveSelection(scope, "receiver-b")).rejects.toThrow("address");
+    await expect(controller.resolveSelection(other, "receiver-a")).rejects.toThrow("address");
   });
 
   it("fails when no saved address is deliverable", async () => {

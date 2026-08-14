@@ -102,6 +102,7 @@ describe("Pupu login from server task phase", () => {
   it("starts with chat, completes login and address, then resumes the same task", async () => {
     const calls: string[] = [];
     const chatBodies: Array<Record<string, unknown>> = [];
+    const addressBodies: Array<Record<string, unknown>> = [];
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
       const url = input instanceof Request ? new URL(input.url).pathname : String(input);
       calls.push(url);
@@ -112,7 +113,8 @@ describe("Pupu login from server task phase", () => {
           detailHint: "3 栋 1201", phoneSuffix: "" }],
       });
       if (url === "/api/pupu/addresses/select") {
-        return Response.json({ selected: true, addressId: "receiver-a" });
+        addressBodies.push(await requestBody(input, init));
+        return Response.json({ task: { taskId: "task-login-1", version: 3 } });
       }
       if (url === "/api/chat") {
         const body = await requestBody(input, init);
@@ -144,6 +146,11 @@ describe("Pupu login from server task phase", () => {
 
     await act(async () => result.current.selectAddress("receiver-a"));
     await waitFor(() => expect(result.current.snapshot.state).toBe("ready"));
+    expect(addressBodies[0]).toEqual({
+      taskId: "task-login-1",
+      taskVersion: 2,
+      receiverId: "receiver-a",
+    });
     expect(calls.filter((url) => url === "/api/chat")).toHaveLength(2);
     expect(chatBodies[1]).toMatchObject({
       taskId: "task-login-1",
