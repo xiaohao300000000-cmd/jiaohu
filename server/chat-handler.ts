@@ -12,7 +12,7 @@ import { getHermesConfig } from "./config";
 import { createHermesRun, streamHermesRun } from "./hermes-client";
 import { buildHermesTaskContract } from "./tasks/hermes-task-contract";
 import { TaskConflictError } from "./tasks/task-coordinator";
-import { InMemoryTaskStore } from "./tasks/in-memory-task-store";
+import type { TaskApplicationService } from "./tasks/task-application-service";
 import {
   readToolArtifact,
   type ToolArtifactIdentity,
@@ -22,7 +22,10 @@ import {
 export type PupuReadiness = "ready" | "awaiting_login" | "awaiting_address";
 
 interface ChatDependencies {
-  taskCoordinator?: InMemoryTaskStore;
+  taskService?: Pick<TaskApplicationService, "resolve" | "get" | "transition"> & {
+    attachProducts?: (taskId: string, expectedVersion: number, products: ReturnType<typeof taskProducts>) => Promise<TaskSnapshot>;
+  };
+  ownerId?: string;
   getPupuReadiness?: (request: Request) => Promise<PupuReadiness>;
   createRun?: (
     input: string,
@@ -51,7 +54,6 @@ interface ChatDependencies {
   ) => void | Promise<void>;
 }
 
-const defaultTaskCoordinator = new InMemoryTaskStore();
 
 function extractInput(body: unknown): string | null {
   if (
@@ -170,13 +172,17 @@ export async function handleChatRequest(
     requestedId && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(requestedId)
       ? requestedId
       : dependencies.createId?.() || `journey-${crypto.randomUUID()}`;
-  const taskCoordinator = dependencies.taskCoordinator ?? defaultTaskCoordinator;
+  if (!dependencies.taskService) {
+    throw new Error("taskService is required");
+  }
+  const taskService = dependencies.taskService;
+  const ownerId = dependencies.ownerId ?? "test-owner";
   const taskId = stringField(body, "taskId");
   let task: TaskSnapshot;
   try {
     task = booleanField(body, "resume") && taskId
-      ? taskCoordinator.resume(taskId)
-      : taskCoordinator.resolve({ input, taskId });
+      ? await taskService.get(ownerId, taskId)
+      : await taskService.resolve({ ownerId, input, taskId });
   } catch (error) {
     if (error instanceof TaskConflictError) {
       return Response.json(
@@ -206,9 +212,9 @@ export async function handleChatRequest(
           const readiness = await (dependencies.getPupuReadiness?.(request) ?? Promise.resolve("ready"));
           if (readiness === "ready" &&
               (task.phase === "awaiting_login" || task.phase === "awaiting_address")) {
-            task = taskCoordinator.transition(task.taskId, task.version, "searching_catalog");
+            task = await taskService.transition({ ownerId, taskId: task.taskId, expectedVersion: task.version, phase: "searching_catalog" });
           } else if (readiness !== "ready" && task.phase !== readiness) {
-            task = taskCoordinator.transition(task.taskId, task.version, readiness);
+            task = await taskService.transition({ ownerId, taskId: task.taskId, expectedVersion: task.version, phase: readiness });
           }
           writer.write({
             type: "data-journey",
@@ -283,7 +289,8 @@ export async function handleChatRequest(
               capability === "commerce.catalog.search" ||
               capability === "commerce.catalog.meal-search")
           ) {
-            task = taskCoordinator.attachProducts(
+            if (!taskService.attachProducts) continue;
+            task = await taskService.attachProducts(
               task.taskId,
               task.version,
               taskProducts(context.products),

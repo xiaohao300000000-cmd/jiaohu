@@ -16,6 +16,14 @@ import { PupuCartController } from "./pupu/cart-controller";
 import { handlePupuCommerceRequest } from "./pupu/commerce-router";
 import { PupuCheckoutController } from "./pupu/checkout-controller";
 import { InMemoryTaskStore } from "./tasks/in-memory-task-store";
+import { getDatabaseConfig } from "./db/config";
+import { createDatabasePool } from "./db/pool";
+import { migrate } from "./db/migrate";
+import { TaskCoordinator } from "./tasks/task-coordinator";
+import { PostgresTaskRepository } from "./tasks/task-repository";
+import { TaskApplicationService } from "./tasks/task-application-service";
+import { resolveTaskOwner } from "./tasks/task-owner";
+import { handleTaskRequest } from "./tasks/task-router";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
@@ -37,6 +45,13 @@ const scopeTickets = new PupuScopeTicketStore({
 const addressController = new PupuAddressController();
 const cartController = new PupuCartController();
 const checkoutController = new PupuCheckoutController();
+const databasePool = createDatabasePool(getDatabaseConfig());
+await migrate(databasePool, join(process.cwd(), "server/db/migrations"));
+const taskService = new TaskApplicationService(
+  databasePool,
+  new PostgresTaskRepository(),
+  new TaskCoordinator(),
+);
 const taskCoordinator = new InMemoryTaskStore();
 
 function requestHeaders(
@@ -92,9 +107,10 @@ app.post(
       },
     );
     try {
-      await sendWebResponse(
-        await handleChatRequest(request, {
-          taskCoordinator,
+      const owner = resolveTaskOwner(request);
+      const chatResponse = await handleChatRequest(request, {
+          taskService,
+          ownerId: owner.ownerId,
           getPupuReadiness: async (source) => {
             const token = readPupuSessionCookie(source.headers.get("cookie"));
             const session = await sessionStore.lookup(token);
@@ -131,9 +147,9 @@ app.post(
             if (!selection) return;
             cartController.registerPlan(session.accountId, runId, selection, products);
           },
-        }),
-        res,
-      );
+        });
+      if (owner.setCookie) chatResponse.headers.set("set-cookie", owner.setCookie);
+      await sendWebResponse(chatResponse, res);
     } catch {
       if (!res.headersSent) {
         res.status(502).json({
@@ -150,6 +166,29 @@ app.post(
     }
   },
 );
+
+app.get("/api/tasks/:taskId", async (req, res) => {
+  const request = new Request(
+    `http://${req.headers.host || "localhost"}${req.originalUrl}`,
+    { headers: requestHeaders(req.headers) },
+  );
+  try {
+    const owner = resolveTaskOwner(request);
+    await sendWebResponse(
+      await handleTaskRequest(request, { taskService, owner }),
+      res,
+    );
+  } catch {
+    if (!res.headersSent) {
+      res.status(502).json({
+        error: {
+          code: "task_state_unavailable",
+          message: "任务状态暂时不可用。",
+        },
+      });
+    }
+  }
+});
 
 app.use(
   "/api/pupu/login",

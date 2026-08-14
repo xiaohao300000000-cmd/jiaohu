@@ -74,6 +74,31 @@ async function* consecutiveEvents(): AsyncGenerator<HermesRunEvent> {
   };
 }
 
+function testTaskService(
+  store = new InMemoryTaskStore(),
+) {
+  return {
+    resolve: async (command: { input: string; taskId?: string }) =>
+      store.resolve(command),
+    get: async (_ownerId: string, taskId: string) =>
+      store.resume(taskId),
+    transition: async (command: {
+      taskId: string;
+      expectedVersion: number;
+      phase: Parameters<InMemoryTaskStore["transition"]>[2];
+    }) => store.transition(
+      command.taskId,
+      command.expectedVersion,
+      command.phase,
+    ),
+    attachProducts: async (
+      taskId: string,
+      expectedVersion: number,
+      products: Parameters<InMemoryTaskStore["attachProducts"]>[2],
+    ) => store.attachProducts(taskId, expectedVersion, products),
+  };
+}
+
 describe("handleChatRequest", () => {
   it("streams typed AI SDK data parts without raw secrets", async () => {
     const request = new Request("http://localhost/api/chat", {
@@ -97,6 +122,7 @@ describe("handleChatRequest", () => {
       result: liveEnvelope,
     }));
     const response = await handleChatRequest(request, {
+      taskService: testTaskService(),
       createRun,
       streamRun: () => events(),
       readToolArtifact,
@@ -146,6 +172,7 @@ describe("handleChatRequest", () => {
     }));
 
     const response = await handleChatRequest(request, {
+      taskService: testTaskService(),
       createRun: async () => ({ runId: "run-1" }),
       streamRun: () => consecutiveEvents(),
       readToolArtifact,
@@ -183,6 +210,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const response = await handleChatRequest(request, {
+      taskService: testTaskService(),
       preparePupuScope: async () => undefined,
       createRun,
       streamRun: () => events(),
@@ -213,7 +241,7 @@ describe("handleChatRequest", () => {
     });
 
     const response = await handleChatRequest(request, {
-      taskCoordinator: coordinator,
+      taskService: testTaskService(coordinator),
       getPupuReadiness: async () => "ready",
       preparePupuScope,
       createRun,
@@ -246,7 +274,7 @@ describe("handleChatRequest", () => {
     });
 
     const response = await handleChatRequest(request, {
-      taskCoordinator: new InMemoryTaskStore({ createId: () => "task-advice-1" }),
+      taskService: testTaskService(new InMemoryTaskStore({ createId: () => "task-advice-1" })),
       getPupuReadiness: async () => "ready",
       preparePupuScope,
       createRun,
@@ -277,7 +305,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const response = await handleChatRequest(request, {
-      taskCoordinator: new InMemoryTaskStore({ createId: () => `task-${readiness}` }),
+      taskService: testTaskService(new InMemoryTaskStore({ createId: () => `task-${readiness}` })),
       getPupuReadiness: async () => readiness,
       createRun,
       streamRun: () => events(),
@@ -300,7 +328,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const first = await handleChatRequest(firstRequest, {
-      taskCoordinator: coordinator,
+      taskService: testTaskService(coordinator),
       getPupuReadiness: async () => "awaiting_login",
       createRun: async () => ({ runId: "never" }),
       streamRun: () => events(),
@@ -319,7 +347,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const second = await handleChatRequest(secondRequest, {
-      taskCoordinator: coordinator,
+      taskService: testTaskService(coordinator),
       getPupuReadiness: async () => "ready",
       preparePupuScope: async () => undefined,
       createRun,
@@ -339,6 +367,7 @@ describe("handleChatRequest", () => {
     });
 
     const response = await handleChatRequest(request, {
+      taskService: testTaskService(),
       createRun: async () => ({ runId: "never" }),
       streamRun: () => events(),
       readToolArtifact: async () => ({ status: "missing" }),
