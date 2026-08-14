@@ -83,6 +83,21 @@ Only provider identifiers are persisted. Full address text and phone numbers are
 
 Changing the binding increments the task version and invalidates the current FinalPlan and every unused confirmation in the same transaction.
 
+### task_runs
+
+Every Hermes execution is bound durably to one task version:
+
+- `run_id text primary key`
+- `task_id uuid not null references tasks(task_id) on delete cascade`
+- `task_version bigint not null`
+- `owner_id text not null`
+- `allowed_capabilities jsonb not null`
+- `status text not null` with values `running`, `completed`, `failed`, or `cancelled`
+- `created_at timestamptz not null`
+- `completed_at timestamptz null`
+
+The run row is inserted before Hermes execution begins. Candidate and FinalPlan writes must reference it, so another server instance can verify run ownership, version, capability, and terminal state without process memory.
+
 ### task_product_candidates
 
 Immutable candidates obtained from an authenticated live provider call:
@@ -324,12 +339,12 @@ The in-memory plan registry, address selection map, cart preview map, checkout p
 ## Retention
 
 - Active and awaiting-confirmation tasks: 90 days.
-- Completed, cancelled, or blocked tasks: archive after 30 days.
+- Completed, cancelled, or blocked tasks: delete after 30 days.
 - Product candidates: 7 days unless referenced by a retained FinalPlan.
 - Expired confirmations: 30 days.
 - Idempotency results: at least 30 days.
 
-Cleanup runs outside request transactions and deletes or archives only rows already in terminal or expired states.
+Cleanup runs outside request transactions. It deletes terminal tasks after 30 days, deletes non-terminal tasks with no update for 90 days, deletes expired confirmations and idempotency records after 30 days, and deletes candidates older than 7 days only when no retained FinalPlan references them.
 
 ## Migration Sequence
 
