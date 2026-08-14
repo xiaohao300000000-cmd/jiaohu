@@ -11,7 +11,8 @@ import type { TaskSnapshot } from "../src/domain/task-contract";
 import { getHermesConfig } from "./config";
 import { createHermesRun, streamHermesRun } from "./hermes-client";
 import { buildHermesTaskContract } from "./tasks/hermes-task-contract";
-import { TaskConflictError, TaskCoordinator } from "./tasks/task-coordinator";
+import { TaskConflictError } from "./tasks/task-coordinator";
+import { InMemoryTaskStore } from "./tasks/in-memory-task-store";
 import {
   readToolArtifact,
   type ToolArtifactIdentity,
@@ -21,7 +22,7 @@ import {
 export type PupuReadiness = "ready" | "awaiting_login" | "awaiting_address";
 
 interface ChatDependencies {
-  taskCoordinator?: TaskCoordinator;
+  taskCoordinator?: InMemoryTaskStore;
   getPupuReadiness?: (request: Request) => Promise<PupuReadiness>;
   createRun?: (
     input: string,
@@ -50,7 +51,7 @@ interface ChatDependencies {
   ) => void | Promise<void>;
 }
 
-const defaultTaskCoordinator = new TaskCoordinator();
+const defaultTaskCoordinator = new InMemoryTaskStore();
 
 function extractInput(body: unknown): string | null {
   if (

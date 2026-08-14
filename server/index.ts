@@ -15,7 +15,7 @@ import { handlePupuAddressRequest } from "./pupu/address-router";
 import { PupuCartController } from "./pupu/cart-controller";
 import { handlePupuCommerceRequest } from "./pupu/commerce-router";
 import { PupuCheckoutController } from "./pupu/checkout-controller";
-import { TaskCoordinator } from "./tasks/task-coordinator";
+import { InMemoryTaskStore } from "./tasks/in-memory-task-store";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
@@ -37,7 +37,7 @@ const scopeTickets = new PupuScopeTicketStore({
 const addressController = new PupuAddressController();
 const cartController = new PupuCartController();
 const checkoutController = new PupuCheckoutController();
-const taskCoordinator = new TaskCoordinator();
+const taskCoordinator = new InMemoryTaskStore();
 
 function requestHeaders(
   headers: express.Request["headers"],

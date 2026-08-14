@@ -1,6 +1,6 @@
 import type { TaskSnapshot } from "../../src/domain/task-contract";
 import type { PupuLoginConfig } from "../config";
-import type { TaskCoordinator } from "../tasks/task-coordinator";
+import type { InMemoryTaskStore } from "../tasks/in-memory-task-store";
 import type { PupuAddressController } from "./address-controller";
 import type { PupuCartController } from "./cart-controller";
 import type { PupuCheckoutController } from "./checkout-controller";
@@ -8,7 +8,7 @@ import { assertMutationRequest, noStoreHeaders, readPupuSessionCookie } from "./
 import type { PupuSessionStore } from "./session-store";
 
 interface Dependencies {
-  taskCoordinator: TaskCoordinator;
+  taskCoordinator: InMemoryTaskStore;
   sessionStore: PupuSessionStore;
   addressController: Pick<PupuAddressController, "getSelection">;
   cartController: PupuCartController;

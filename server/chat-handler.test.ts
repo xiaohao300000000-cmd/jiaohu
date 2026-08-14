@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { HermesRunEvent } from "../src/ai/hermes-event-adapter";
 import type { ToolArtifactIdentity } from "./tool-artifact";
 import { handleChatRequest } from "./chat-handler";
-import { TaskCoordinator } from "./tasks/task-coordinator";
+import { InMemoryTaskStore } from "./tasks/in-memory-task-store";
 
 const liveEnvelope = {
   schema_version: "1",
@@ -199,7 +199,7 @@ describe("handleChatRequest", () => {
   });
 
   it("routes commerce from server task state without accepting pupuIntent", async () => {
-    const coordinator = new TaskCoordinator({ createId: () => "task-route-1" });
+    const coordinator = new InMemoryTaskStore({ createId: () => "task-route-1" });
     const createRun = vi.fn(async (_input: string) => ({ runId: "run-1" }));
     const preparePupuScope = vi.fn(async () => undefined);
     const request = new Request("http://localhost/api/chat", {
@@ -246,7 +246,7 @@ describe("handleChatRequest", () => {
     });
 
     const response = await handleChatRequest(request, {
-      taskCoordinator: new TaskCoordinator({ createId: () => "task-advice-1" }),
+      taskCoordinator: new InMemoryTaskStore({ createId: () => "task-advice-1" }),
       getPupuReadiness: async () => "ready",
       preparePupuScope,
       createRun,
@@ -277,7 +277,7 @@ describe("handleChatRequest", () => {
       headers: { "content-type": "application/json" },
     });
     const response = await handleChatRequest(request, {
-      taskCoordinator: new TaskCoordinator({ createId: () => `task-${readiness}` }),
+      taskCoordinator: new InMemoryTaskStore({ createId: () => `task-${readiness}` }),
       getPupuReadiness: async () => readiness,
       createRun,
       streamRun: () => events(),
@@ -290,7 +290,7 @@ describe("handleChatRequest", () => {
   });
 
   it("resumes the same task after readiness changes without reclassification", async () => {
-    const coordinator = new TaskCoordinator({ createId: () => "task-resume-1" });
+    const coordinator = new InMemoryTaskStore({ createId: () => "task-resume-1" });
     const firstRequest = new Request("http://localhost/api/chat", {
       method: "POST",
       body: JSON.stringify({

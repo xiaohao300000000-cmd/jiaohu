@@ -22,4 +22,15 @@ describe("central task routing architecture", () => {
       access("server/pupu/request-classifier.ts"),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("keeps TaskCoordinator free of persistence and process state", async () => {
+    const source = await readFile(
+      "server/tasks/task-coordinator.ts",
+      "utf8",
+    );
+    expect(source).not.toMatch(/new Map/);
+    expect(source).not.toMatch(
+      /from ["'](?:pg|\.\.\/db|\.\/task-repository)/,
+    );
+  });
 });

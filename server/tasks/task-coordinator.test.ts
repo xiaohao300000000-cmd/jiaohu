@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
-import {
-  TaskConflictError,
-  TaskCoordinator,
-} from "./task-coordinator";
+import { TaskConflictError } from "./task-coordinator";
+import { InMemoryTaskStore } from "./in-memory-task-store";
 
 function coordinator() {
   let sequence = 0;
-  return new TaskCoordinator({ createId: () => `task-${++sequence}` });
+  return new InMemoryTaskStore({ createId: () => `task-${++sequence}` });
 }
 
-describe("TaskCoordinator", () => {
+describe("InMemoryTaskStore", () => {
   it("routes ordinary advice without granting provider capabilities", () => {
     const task = coordinator().resolve({ input: "帮我安排今天晚上的学习计划" });
 
@@ -30,7 +28,7 @@ describe("TaskCoordinator", () => {
       domain: "commerce",
       goal: "find_products",
       phase: "searching_catalog",
-      allowedCapabilities: ["commerce.catalog.search"],
+      allowedCapabilities: ["commerce.catalog.search", "task.plan.submit"],
     });
   });
 
@@ -42,7 +40,7 @@ describe("TaskCoordinator", () => {
     expect(task).toMatchObject({
       domain: "commerce",
       goal: "find_products",
-      allowedCapabilities: ["commerce.catalog.meal-search"],
+      allowedCapabilities: ["commerce.catalog.meal-search", "task.plan.submit"],
       context: {
         peopleCount: 4,
         budgetCents: 15_000,
@@ -114,9 +112,10 @@ describe("TaskCoordinator", () => {
       goal: "revise_plan",
       phase: "editing_plan",
       context: {
-        selectedProducts: [{ productId: "milk-1", quantity: 2 }],
+        selectedProducts: [{ productId: "milk-1", quantity: 1 }],
       },
     });
+    expect(changed.context.requirements).toContain("鲜牛奶改成2瓶");
     expect(changed.context.cartPreview).toBeUndefined();
     expect(changed.context.checkoutPreview).toBeUndefined();
   });

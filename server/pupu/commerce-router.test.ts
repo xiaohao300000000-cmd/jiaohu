@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { TaskCoordinator } from "../tasks/task-coordinator";
+import { InMemoryTaskStore } from "../tasks/in-memory-task-store";
 import { handlePupuCommerceRequest } from "./commerce-router";
 
 const session = {
@@ -70,7 +70,7 @@ function request(path: string, body: Record<string, unknown>, origin = "http://l
   });
 }
 
-function confirmationTask(taskCoordinator: TaskCoordinator) {
+function confirmationTask(taskCoordinator: InMemoryTaskStore) {
   const searching = taskCoordinator.resolve({ input: "帮我找牛奶" });
   return taskCoordinator.attachProducts(searching.taskId, searching.version, [{
     productId: "sku-a",
@@ -94,13 +94,13 @@ describe("Pupu commerce router", () => {
         },
         body: JSON.stringify({}),
       }),
-      { ...deps, taskCoordinator: new TaskCoordinator() } as never,
+      { ...deps, taskCoordinator: new InMemoryTaskStore() } as never,
     );
     expect(response.status).toBe(401);
   });
 
   it("rejects cart preview before task reaches confirmation", async () => {
-    const taskCoordinator = new TaskCoordinator({ createId: () => "task-gate-1" });
+    const taskCoordinator = new InMemoryTaskStore({ createId: () => "task-gate-1" });
     const task = taskCoordinator.resolve({ input: "帮我找牛奶" });
     const response = await handlePupuCommerceRequest(
       request("/api/pupu/cart/preview", {
@@ -117,7 +117,7 @@ describe("Pupu commerce router", () => {
   });
 
   it("advances the full legal cart and order confirmation sequence", async () => {
-    const taskCoordinator = new TaskCoordinator({ createId: () => "task-flow-1" });
+    const taskCoordinator = new InMemoryTaskStore({ createId: () => "task-flow-1" });
     const task = confirmationTask(taskCoordinator);
 
     const previewResponse = await handlePupuCommerceRequest(
@@ -182,7 +182,7 @@ describe("Pupu commerce router", () => {
   it("rejects cross-origin mutations", async () => {
     const response = await handlePupuCommerceRequest(
       request("/api/pupu/cart/preview", {}, "https://evil.example"),
-      { ...deps, taskCoordinator: new TaskCoordinator() } as never,
+      { ...deps, taskCoordinator: new InMemoryTaskStore() } as never,
     );
     expect(response.status).toBe(403);
   });

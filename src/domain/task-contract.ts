@@ -27,6 +27,7 @@ export type TaskPhase =
   | "blocked";
 
 export type TaskCapability =
+  | "task.plan.submit"
   | "commerce.catalog.search"
   | "commerce.catalog.meal-search"
   | "commerce.cart.read"
@@ -78,6 +79,15 @@ export interface TaskConfirmation {
   expiresAt: string;
 }
 
+export interface TaskFinalPlan {
+  planId: string;
+  version: number;
+  title: string;
+  explanation: string;
+  totalCents: number;
+  currency: "CNY";
+}
+
 export interface TaskContext {
   peopleCount?: number;
   budgetCents?: number;
@@ -97,6 +107,7 @@ export interface TaskSnapshot {
   goal: TaskGoal;
   phase: TaskPhase;
   context: TaskContext;
+  finalPlan?: TaskFinalPlan;
   requestedCapabilities: TaskCapability[];
   allowedCapabilities: TaskCapability[];
   nextActions: TaskAction[];
