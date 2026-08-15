@@ -111,7 +111,7 @@ export async function handleChatRequest(
   const streamRun =
     dependencies.streamRun ||
     ((runId: string, signal?: AbortSignal) =>
-      streamHermesRun(runId, config, signal));
+      streamHermesRun(runId, sessionId, sessionKey, config, signal));
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {

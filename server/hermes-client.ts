@@ -48,6 +48,36 @@ async function readSessionHistory(
   });
 }
 
+async function readLatestToolOutput(
+  sessionId: string,
+  sessionKey: string,
+  toolName: string,
+  config: HermesClientConfig,
+  fetchImpl: FetchLike,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const response = await fetchImpl(
+    `${config.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=20&order=latest`,
+    { headers: headers(config, sessionKey), signal },
+  );
+  if (!response.ok) return null;
+  const body = (await response.json()) as { data?: unknown };
+  if (!Array.isArray(body.data)) return null;
+  const message = [...body.data].reverse().find((item) =>
+    item !== null &&
+    typeof item === "object" &&
+    (item as { role?: unknown }).role === "tool" &&
+    (item as { tool_name?: unknown }).tool_name === toolName &&
+    typeof (item as { content?: unknown }).content === "string"
+  ) as { content: string } | undefined;
+  if (!message) return null;
+  try {
+    return JSON.parse(message.content) as unknown;
+  } catch {
+    return message.content;
+  }
+}
+
 function opaqueReference(): string {
   return `hermes-event-${crypto.randomUUID()}`;
 }
@@ -220,18 +250,34 @@ export async function* parseHermesEventStream(
 
 export async function* streamHermesRun(
   runId: string,
+  sessionId: string,
+  sessionKey: string,
   config: HermesClientConfig,
   signal?: AbortSignal,
   fetchImpl: FetchLike = fetch,
 ): AsyncGenerator<HermesRunEvent> {
   const response = await fetchImpl(
     `${config.baseUrl}/v1/runs/${encodeURIComponent(runId)}/events`,
-    { headers: headers(config), signal },
+    { headers: headers(config, sessionKey), signal },
   );
   if (!response.ok || !response.body) {
     throw new Error(`Hermes event stream failed (${response.status})`);
   }
-  yield* parseHermesEventStream(response.body, signal);
+  for await (const event of parseHermesEventStream(response.body, signal)) {
+    if (event.type === "tool.completed" && event.tool_name === "pupu_cli") {
+      const output = await readLatestToolOutput(
+        sessionId,
+        sessionKey,
+        event.tool_name,
+        config,
+        fetchImpl,
+        signal,
+      );
+      yield { ...event, output };
+    } else {
+      yield event;
+    }
+  }
 }
 
 export async function stopHermesRun(
