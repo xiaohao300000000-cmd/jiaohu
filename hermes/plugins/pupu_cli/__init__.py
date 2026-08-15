@@ -9,11 +9,13 @@ TOOLSET = "pupu_cli"
 TOOL_SCHEMA = {
     "name": "pupu_cli",
     "description": (
-        "Call any command exposed by the installed Pupu CLI. "
-        "Use operation for the command path, such as capabilities, catalog search, "
-        "cart add, coupon claim, checkout preview, or checkout create-invite-pay. "
-        "Pass the remaining CLI tokens in arguments. Use --help to inspect a command "
-        "and --json when structured output is available."
+        "Call any command exposed by the installed Pupu CLI. Use only the top-level "
+        "command group in operation and put the subcommand first in arguments: "
+        'operation="catalog", arguments=["search", "--query", "牛肉", ...]. '
+        "Other groups include login, account, address, cart, coupon, checkout, "
+        "order, invite-pay, product, recipe, gift, fulfillment, approval, auth-plan, "
+        "request-policy, capabilities, and version. The tool exposes the complete CLI "
+        "without an operation whitelist and returns CLI output unchanged."
     ),
     "parameters": {
         "type": "object",

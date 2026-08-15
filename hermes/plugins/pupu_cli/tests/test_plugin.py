@@ -32,6 +32,14 @@ def test_registers_one_complete_pupu_cli_connection_tool():
     }
 
 
+def test_schema_tells_hermes_to_use_command_group_as_operation():
+    context = RecordingContext()
+    register(context)
+    description = context.tools[0]["schema"]["description"]
+    assert 'operation="catalog"' in description
+    assert 'arguments=["search"' in description
+
+
 def test_tool_delegates_the_operation_chosen_by_hermes(monkeypatch):
     calls = []
 

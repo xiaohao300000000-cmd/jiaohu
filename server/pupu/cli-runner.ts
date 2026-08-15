@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { isAbsolute } from "node:path";
 import type { LoginOperation, PupuCliScope } from "./login-types";
 
-const ACCOUNT = /^acct_[a-f0-9]{32}$/;
+const HOUSEHOLD = /^household-[A-Za-z0-9_-]+$/;
 const PHONE = /^1\d{10}$/;
 const LOGIN_SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SECRET_KEYS = new Set([
@@ -17,9 +17,9 @@ export interface LoginCommand {
 
 function validateScope(scope: PupuCliScope): void {
   if (!isAbsolute(scope.cliPath)) throw new Error("CLI path must be absolute");
-  if (!ACCOUNT.test(scope.accountId)) throw new Error("account id is unsafe");
-  if (!isAbsolute(scope.accountsRoot) || !isAbsolute(scope.dataRoot)) {
-    throw new Error("account roots must be absolute");
+  if (!HOUSEHOLD.test(scope.householdId)) throw new Error("household id is unsafe");
+  if (!isAbsolute(scope.dataRoot)) {
+    throw new Error("data root must be absolute");
   }
 }
 
@@ -54,8 +54,7 @@ export function buildLoginCommand(
     argv.push("--login-session-id", operation.loginSessionId);
   }
   argv.push(
-    "--account-id", scope.accountId,
-    "--accounts-root", scope.accountsRoot,
+    "--household-id", scope.householdId,
     "--data-root", scope.dataRoot,
     "--json",
   );

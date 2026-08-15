@@ -14,7 +14,7 @@ rediscover documented commands with `capabilities` or `--help`.
 For every Pupu business request, call this once before the requested operation:
 
 - operation: `login`
-- arguments: `["status", "--data-root", "/home/pupu/providers/pupu-cli/.local/private", "--accounts-root", "/home/pupu/.local/share/jiaohu/pupu-accounts", "--json"]`
+- arguments: `["status", "--household-id", "household-f3f3b74a55ae8bf60b6c1172", "--data-root", "/home/pupu/providers/pupu-cli/.local/private", "--json"]`
 
 If the result status is `auth_required`, stop immediately. Do not call any more
 Pupu commands in that run. Tell LiquidJourney that login is required; the app

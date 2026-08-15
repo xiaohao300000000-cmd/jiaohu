@@ -3,8 +3,7 @@ import { buildLoginCommand, redactProviderValue } from "./cli-runner";
 
 const scope = {
   cliPath: "/opt/pupu",
-  accountId: "acct_0123456789abcdef0123456789abcdef",
-  accountsRoot: "/srv/accounts",
+  householdId: "household-shared-owner",
   dataRoot: "/srv/data",
 };
 
@@ -13,8 +12,7 @@ describe("Pupu login CLI runner", () => {
     const command = buildLoginCommand(scope, { kind: "verify", code: "123456" });
     expect(command.argv).toEqual([
       "/opt/pupu", "login", "verify-code", "--code-stdin", "--allow-session-rotation",
-      "--account-id", scope.accountId, "--accounts-root", scope.accountsRoot,
-      "--data-root", scope.dataRoot, "--json",
+      "--household-id", scope.householdId, "--data-root", scope.dataRoot, "--json",
     ]);
     expect(command.stdin).toBe("123456\n");
     expect(command.argv).not.toContain("123456");
@@ -24,7 +22,9 @@ describe("Pupu login CLI runner", () => {
     const command = buildLoginCommand(scope, { kind: "request", phone: "13000000000" });
     expect(command.argv).toContain("--phone");
     expect(command.argv).toContain("13000000000");
-    expect(() => buildLoginCommand({ ...scope, accountId: "../other" }, { kind: "status" })).toThrow("account");
+    expect(() => buildLoginCommand(
+      { ...scope, householdId: "../other" }, { kind: "status" },
+    )).toThrow("household");
   });
 
   it("preserves the provider login session across captcha and SMS requests", () => {

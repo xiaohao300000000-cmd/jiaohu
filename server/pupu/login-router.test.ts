@@ -22,6 +22,7 @@ function setup() {
       controller,
       config: {
         cliPath: "/opt/pupu", dataRoot: "/srv/data", accountsRoot: join(root, "accounts"),
+        householdId: "household-shared-owner",
         publicOrigin: "https://app.example",
       },
     };
@@ -57,7 +58,10 @@ describe("Pupu login router", () => {
     expect(response.status).toBe(200);
     expect(JSON.stringify(await response.json())).not.toContain("13000000000");
     expect(deps.controller.start).toHaveBeenCalledWith(
-      expect.stringMatching(/^acct_/), expect.objectContaining({ accountId: expect.stringMatching(/^acct_/) }),
+      expect.stringMatching(/^acct_/),
+      expect.objectContaining({
+        householdId: "household-shared-owner",
+      }),
       "13000000000", expect.any(AbortSignal),
     );
   });

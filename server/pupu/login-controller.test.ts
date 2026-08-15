@@ -4,8 +4,7 @@ import { CaptchaBridge } from "./captcha-bridge";
 
 const scope = {
   cliPath: "/opt/pupu",
-  accountId: "acct_0123456789abcdef0123456789abcdef",
-  accountsRoot: "/srv/accounts",
+  householdId: "household-shared-owner",
   dataRoot: "/srv/data",
 };
 
@@ -103,7 +102,9 @@ describe("PupuLoginController", () => {
     const execute = vi.fn().mockResolvedValue({ ok: true, status: "sms_requested" });
     const controller = new PupuLoginController({ execute, attemptTtlMs: 60_000, resendCooldownMs: 30_000 });
     await controller.start("session-a", scope, "13000000000");
-    await controller.start("session-b", { ...scope, accountId: "acct_abcdefabcdefabcdefabcdefabcdefab" }, "13100000000");
+    await controller.start(
+      "session-b", { ...scope, householdId: "household-other-owner" }, "13100000000",
+    );
 
     expect(controller.cancel("session-a").phase).toBe("auth_required");
     expect(controller.inspectAttempt("session-a")).toBeNull();
