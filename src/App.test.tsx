@@ -44,6 +44,32 @@ function hermesResponse(requestId: string): Response {
   return createUIMessageStreamResponse({ stream });
 }
 
+function loginRequiredResponse(requestId: string): Response {
+  const stream = createUIMessageStream<JourneyUIMessage>({
+    execute({ writer }) {
+      writer.write({
+        type: "data-journey",
+        data: { type: "stream.started", requestId, runId: "run-login-1" },
+      });
+      writer.write({
+        type: "data-journey",
+        data: {
+          type: "presentation.updated",
+          requestId,
+          presentation: {
+            capability: "pupu",
+            component: "pupu.login",
+            mode: "canvas",
+            dataSource: "live",
+            payload: { phase: "phone" },
+          },
+        },
+      });
+    },
+  });
+  return createUIMessageStreamResponse({ stream });
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
@@ -72,6 +98,42 @@ describe("Hermes Pupu CLI frontend", () => {
       expect(screen.getByText("Hermes 执行已完成")).toBeVisible();
     });
     expect(screen.getByText("购物车已更新")).toBeVisible();
+  });
+
+  it("asks the customer to log in before continuing an expired Pupu request", async () => {
+    const fetchMock = vi.fn(async (input, init) => {
+      if (String(input) === "/api/chat") {
+        const body = JSON.parse(String(init?.body));
+        return loginRequiredResponse(body.requestId);
+      }
+      if (String(input) === "/api/pupu/login/start") {
+        return Response.json({
+          phase: "sms",
+          attemptId: "attempt-1",
+          retryAfterSeconds: 60,
+        });
+      }
+      throw new Error(`unexpected request: ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("输入生活指令"), "看看牛肉");
+    await user.click(screen.getByRole("button", { name: "发送指令" }));
+
+    expect(await screen.findByRole("form", { name: "朴朴登录" })).toBeVisible();
+    await user.type(screen.getByLabelText("手机号"), "13800138000");
+    await user.click(screen.getByRole("button", { name: /继续验证/ }));
+
+    expect(await screen.findByRole("form", { name: "短信验证" })).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/pupu/login/start",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+      }),
+    );
   });
 
   it("keeps one conversation session without creating a browser-owned Session-Key", async () => {

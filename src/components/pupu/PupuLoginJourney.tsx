@@ -68,7 +68,7 @@ export function PupuLoginJourney({
 
         {presentation.phase === "phone" && (
           <form aria-label="朴朴登录" className="pupu-login__form" onSubmit={submitPhone}>
-            <p>首次使用朴朴能力前，需要由你本人完成登录。手机号不会发给 AI。</p>
+            <p>朴朴登录已过期或尚未登录，请先完成登录。手机号不会发给 AI。</p>
             <label htmlFor={`pupu-phone-${instanceId}`}>手机号</label>
             <input
               id={`pupu-phone-${instanceId}`}

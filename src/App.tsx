@@ -14,6 +14,11 @@ export default function App() {
     snapshot,
     transportBusy,
     submit,
+    submitLoginPhone,
+    submitLoginCode,
+    completeLoginCaptcha,
+    resendLoginCode,
+    cancelLogin,
     stop,
     retry,
     reset,
@@ -43,7 +48,9 @@ export default function App() {
               <span className="app-header__canvas-status">
                 {snapshot.state === "ready"
                   ? "Hermes 执行已完成"
-                  : "Hermes 正在处理"}
+                  : snapshot.presentation?.component === "pupu.login"
+                    ? "请先登录朴朴"
+                    : "Hermes 正在处理"}
               </span>
               <button
                 className="app-header__return"
@@ -90,6 +97,11 @@ export default function App() {
                   <JourneyPresentationRenderer
                     snapshot={snapshot}
                     onRetry={() => void retry()}
+                    onLoginPhone={(phone) => void submitLoginPhone(phone)}
+                    onLoginCode={(code) => void submitLoginCode(code)}
+                    onLoginCaptchaComplete={() => void completeLoginCaptcha()}
+                    onLoginResend={() => void resendLoginCode()}
+                    onLoginCancel={() => void cancelLogin()}
                   />
                 </JourneyOriginSurface>
               </div>

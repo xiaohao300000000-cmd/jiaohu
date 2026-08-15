@@ -205,6 +205,42 @@ describe("mapHermesEvent", () => {
     });
     expect(JSON.stringify(mapped)).not.toContain('"dataSource":"live"');
   });
+  it("routes an auth_required business-command failure to login", () => {
+    const context = createHermesEventContext(requestId, "看看牛肉", runId);
+    const mapped = mapHermesEvent(
+      {
+        type: "tool.completed",
+        run_id: runId,
+        tool_name: "pupu_cli",
+        tool_call_id: "catalog-auth",
+        output: {
+          schema_version: "1",
+          ok: false,
+          operation: "pupu.catalog.search",
+          request_id: "catalog-auth-1",
+          household_id: "household-1",
+          status: "failed",
+          data: null,
+          error: {
+            code: "auth_required",
+            message: "Pupu auth is not configured",
+            retryable: false,
+          },
+          evidence_ref: null,
+        },
+      },
+      context,
+    );
+
+    expect(mapped).toEqual(expect.objectContaining({
+      type: "presentation.updated",
+      presentation: expect.objectContaining({
+        component: "pupu.login",
+        payload: { phase: "phone" },
+      }),
+    }));
+  });
+
   it("surfaces real auth_required without fabricating live products", () => {
     const context = createHermesEventContext(requestId, "query", runId);
     mapHermesEvent(
@@ -240,15 +276,18 @@ describe("mapHermesEvent", () => {
     );
 
     expect(mapped).toEqual({
-      type: "stream.failed",
+      type: "presentation.updated",
       requestId,
-      error: {
-        kind: "provider",
-        message: "朴朴登录状态已失效，需要先恢复真实登录态。",
-        reference: "auth-status-1",
+      presentation: {
+        capability: "pupu",
+        component: "pupu.login",
+        mode: "canvas",
+        dataSource: "live",
+        payload: { phase: "phone" },
       },
     });
-    expect(JSON.stringify(mapped)).not.toContain('"dataSource":"live"');
+    expect(JSON.stringify(mapped)).not.toContain("pupu.purchase-plan");
+    expect(JSON.stringify(mapped)).not.toContain('"products"');
 
     expect(
       mapHermesEvent(

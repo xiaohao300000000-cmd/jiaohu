@@ -201,17 +201,30 @@ function mapPupuOutput(
 
   const envelope = cliEnvelopeSchema.safeParse(rawOutput);
   if (!envelope.success) return invalidResult(context);
-  const authRequired = envelope.data.status === "auth_required";
-  if (authRequired || !envelope.data.ok) {
+  const authRequired = envelope.data.status === "auth_required" ||
+    envelope.data.error?.code === "auth_required";
+  if (authRequired) {
+    context.terminalFailure = true;
+    return {
+      type: "presentation.updated",
+      requestId: context.requestId,
+      presentation: {
+        capability: "pupu",
+        component: "pupu.login",
+        mode: "canvas",
+        dataSource: "live",
+        payload: { phase: "phone" },
+      },
+    };
+  }
+  if (!envelope.data.ok) {
     context.terminalFailure = true;
     return {
       type: "stream.failed",
       requestId: context.requestId,
       error: {
         kind: "provider",
-        message: authRequired
-          ? "朴朴登录状态已失效，需要先恢复真实登录态。"
-          : "朴朴实时服务返回失败，请稍后重试。",
+        message: "朴朴实时服务返回失败，请稍后重试。",
         reference: envelope.data.request_id,
       },
     };

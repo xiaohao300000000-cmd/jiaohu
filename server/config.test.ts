@@ -21,4 +21,19 @@ describe("getHermesConfig", () => {
       ownerSessionKey: "owner-owner-shared-across-devices",
     });
   });
+  it("returns the restored Pupu login runtime configuration", async () => {
+    const { getPupuLoginConfig } = await import("./config");
+    expect(getPupuLoginConfig({
+      APP_PUBLIC_ORIGIN: "https://38.76.171.131:8443",
+    })).toEqual({
+      cliPath: "/home/pupu/providers/pupu-cli/.venv/bin/pupu",
+      dataRoot: "/home/pupu/providers/pupu-cli/.local/private",
+      accountsRoot: "/home/pupu/.local/share/jiaohu/pupu-accounts",
+      runtimeRoot: "/home/pupu/.local/state/jiaohu/pupu-login",
+      publicOrigin: "https://38.76.171.131:8443",
+      attemptTtlMs: 600000,
+      resendCooldownMs: 60000,
+    });
+  });
+
 });

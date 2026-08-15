@@ -1,13 +1,27 @@
 import express from "express";
+import { join } from "node:path";
 import { createServer as createViteServer } from "vite";
 import { handleChatRequest } from "./chat-handler";
-import { getHermesConfig } from "./config";
+import { getHermesConfig, getPupuLoginConfig } from "./config";
 import { stopHermesRun } from "./hermes-client";
 import { abortOnClientDisconnect } from "./request-lifecycle";
+import { PupuSessionStore } from "./pupu/session-store";
+import { PupuLoginController } from "./pupu/login-controller";
+import { handlePupuLoginRequest } from "./pupu/login-router";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
 const port = Number(process.env.APP_PORT || 4173);
+
+const loginConfig = getPupuLoginConfig();
+const sessionStore = new PupuSessionStore({
+  root: join(loginConfig.runtimeRoot, "sessions"),
+  accountsRoot: loginConfig.accountsRoot,
+});
+const loginController = new PupuLoginController({
+  attemptTtlMs: loginConfig.attemptTtlMs,
+  resendCooldownMs: loginConfig.resendCooldownMs,
+});
 
 function requestHeaders(headers: express.Request["headers"]): Headers {
   const result = new Headers();
@@ -67,6 +81,51 @@ app.post(
           error: {
             code: "upstream_unavailable",
             message: "Hermes 暂时不可用，请稍后重试。",
+          },
+        });
+      } else {
+        res.end();
+      }
+    } finally {
+      stopWatching();
+    }
+  },
+);
+
+
+app.use(
+  "/api/pupu/login",
+  express.raw({ type: () => true, limit: "128kb" }),
+  async (req, res) => {
+    const controller = new AbortController();
+    const stopWatching = abortOnClientDisconnect(req, res, controller);
+    const method = req.method.toUpperCase();
+    const request = new Request(
+      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
+      {
+        method,
+        headers: requestHeaders(req.headers),
+        body: method === "GET" || method === "HEAD" ? undefined : req.body,
+        signal: controller.signal,
+      },
+    );
+    try {
+      await sendWebResponse(
+        await handlePupuLoginRequest(request, {
+          sessionStore,
+          controller: loginController,
+          config: loginConfig,
+        }),
+        res,
+      );
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).json({
+          phase: "error",
+          error: {
+            code: "login_unavailable",
+            message: "朴朴登录暂时不可用。",
+            retryable: true,
           },
         });
       } else {
