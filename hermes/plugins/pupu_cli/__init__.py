@@ -9,13 +9,21 @@ TOOLSET = "pupu_cli"
 TOOL_SCHEMA = {
     "name": "pupu_cli",
     "description": (
-        "Call any command exposed by the installed Pupu CLI. Use only the top-level "
-        "command group in operation and put the subcommand first in arguments: "
-        'operation="catalog", arguments=["search", "--query", "牛肉", ...]. '
-        "Other groups include login, account, address, cart, coupon, checkout, "
-        "order, invite-pay, product, recipe, gift, fulfillment, approval, auth-plan, "
-        "request-policy, capabilities, and version. The tool exposes the complete CLI "
-        "without an operation whitelist and returns CLI output unchanged."
+        "Call any command exposed by the installed Pupu CLI. For a Pupu business "
+        "request, first make only this tool call: operation=\"login\", "
+        "arguments=[\"status\",\"--household-id\","
+        "\"household-f3f3b74a55ae8bf60b6c1172\",\"--data-root\","
+        "\"/home/pupu/providers/pupu-cli/.local/private\",\"--json\"]. "
+        "Wait for the login result before emitting any business command. If ready, "
+        "catalog search is operation=\"catalog\", arguments=[\"search\",\"--query\","
+        "\"<keyword>\",\"--size\",\"20\",\"--household-id\","
+        "\"household-f3f3b74a55ae8bf60b6c1172\",\"--request-id\",\"<unique-id>\","
+        "\"--data-root\",\"/home/pupu/providers/pupu-cli/.local/private\",\"--json\"]. "
+        "Use only the top-level command group in operation and put the subcommand "
+        "first in arguments. Other groups include account, address, cart, coupon, "
+        "checkout, order, invite-pay, product, recipe, gift, fulfillment, approval, "
+        "auth-plan, request-policy, capabilities, and version. The tool exposes the "
+        "complete CLI without an operation whitelist and returns CLI output unchanged."
     ),
     "parameters": {
         "type": "object",
