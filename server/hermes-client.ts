@@ -4,14 +4,48 @@ import type { HermesClientConfig } from "./config";
 export type { HermesClientConfig } from "./config";
 
 type FetchLike = typeof fetch;
+type ConversationMessage = { role: string; content: string };
 
-function headers(config: HermesClientConfig): Record<string, string> {
+function headers(
+  config: HermesClientConfig,
+  sessionKey?: string,
+): Record<string, string> {
   return {
     "content-type": "application/json",
     ...(config.apiKey
       ? { authorization: `Bearer ${config.apiKey}` }
       : {}),
+    ...(sessionKey ? { "X-Hermes-Session-Key": sessionKey } : {}),
   };
+}
+
+async function readSessionHistory(
+  sessionId: string,
+  sessionKey: string,
+  config: HermesClientConfig,
+  fetchImpl: FetchLike,
+  signal?: AbortSignal,
+): Promise<ConversationMessage[]> {
+  const response = await fetchImpl(
+    `${config.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=500&order=oldest`,
+    { headers: headers(config, sessionKey), signal },
+  );
+  if (response.status === 404) return [];
+  if (!response.ok) {
+    throw new Error(`Hermes session history failed (${response.status})`);
+  }
+  const body = (await response.json()) as { data?: unknown };
+  if (!Array.isArray(body.data)) return [];
+  return body.data.flatMap((message) => {
+    if (
+      message === null ||
+      typeof message !== "object" ||
+      typeof (message as { role?: unknown }).role !== "string" ||
+      typeof (message as { content?: unknown }).content !== "string"
+    ) return [];
+    const { role, content } = message as ConversationMessage;
+    return role === "user" || role === "assistant" ? [{ role, content }] : [];
+  });
 }
 
 function opaqueReference(): string {
@@ -21,14 +55,26 @@ function opaqueReference(): string {
 export async function createHermesRun(
   input: string,
   sessionId: string,
+  sessionKey: string,
   config: HermesClientConfig,
   fetchImpl: FetchLike = fetch,
   signal?: AbortSignal,
 ): Promise<{ runId: string }> {
+  const conversationHistory = await readSessionHistory(
+    sessionId,
+    sessionKey,
+    config,
+    fetchImpl,
+    signal,
+  );
   const response = await fetchImpl(`${config.baseUrl}/v1/runs`, {
     method: "POST",
-    headers: headers(config),
-    body: JSON.stringify({ input, session_id: sessionId }),
+    headers: headers(config, sessionKey),
+    body: JSON.stringify({
+      input,
+      session_id: sessionId,
+      conversation_history: conversationHistory,
+    }),
     signal,
   });
   if (!response.ok) {

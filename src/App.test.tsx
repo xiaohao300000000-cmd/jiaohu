@@ -46,6 +46,7 @@ function hermesResponse(requestId: string): Response {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 describe("Hermes Pupu CLI frontend", () => {
@@ -71,5 +72,45 @@ describe("Hermes Pupu CLI frontend", () => {
       expect(screen.getByText("Hermes 执行已完成")).toBeVisible();
     });
     expect(screen.getByText("购物车已更新")).toBeVisible();
+  });
+
+  it("keeps one Hermes session across follow-ups and rotates only it on reset", async () => {
+    const chatBodies: Array<Record<string, string>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, init) => {
+      if (String(input).startsWith("/api/runs/")) {
+        return Response.json({ ok: true }, { status: 202 });
+      }
+      const body = JSON.parse(String(init?.body)) as Record<string, string>;
+      chatBodies.push(body);
+      return hermesResponse(body.requestId);
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("输入生活指令"), "找牛奶");
+    await user.click(screen.getByRole("button", { name: "发送指令" }));
+    await waitFor(() => expect(chatBodies).toHaveLength(1));
+
+    await user.type(screen.getByLabelText("输入新的生活指令"), "看看第二个");
+    await user.click(screen.getByRole("button", { name: "发送新指令" }));
+    await waitFor(() => expect(chatBodies).toHaveLength(2));
+
+    expect(chatBodies[0].sessionId).toBeTruthy();
+    expect(chatBodies[1].sessionId).toBe(chatBodies[0].sessionId);
+    expect(chatBodies[1].requestId).not.toBe(chatBodies[0].requestId);
+    expect(chatBodies[0].sessionKey).toBeTruthy();
+    expect(chatBodies[1].sessionKey).toBe(chatBodies[0].sessionKey);
+
+    await user.click(screen.getByRole("button", { name: "返回首页" }));
+    await waitFor(() => {
+      expect(screen.getByText("Hermes 实时通道 · 完整 Pupu CLI")).toBeVisible();
+    });
+    await user.type(screen.getByLabelText("输入生活指令"), "新会话找苹果");
+    await user.click(screen.getByRole("button", { name: "发送指令" }));
+    await waitFor(() => expect(chatBodies).toHaveLength(3));
+
+    expect(chatBodies[2].sessionId).toBeTruthy();
+    expect(chatBodies[2].sessionId).not.toBe(chatBodies[0].sessionId);
+    expect(chatBodies[2].sessionKey).toBe(chatBodies[0].sessionKey);
   });
 });

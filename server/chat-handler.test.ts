@@ -39,6 +39,8 @@ function chatRequest(text = "把牛奶加入购物车") {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       requestId: "journey-1",
+      sessionId: "session-1",
+      sessionKey: "user-1",
       messages: [{
         role: "user",
         parts: [{ type: "text", text }],
@@ -59,7 +61,8 @@ describe("Hermes chat handler", () => {
 
     expect(createRun).toHaveBeenCalledWith(
       "把牛奶加入购物车",
-      "journey-1",
+      "session-1",
+      "user-1",
       expect.any(AbortSignal),
     );
   });
