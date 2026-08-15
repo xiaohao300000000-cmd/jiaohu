@@ -5,6 +5,10 @@ export type { HermesClientConfig } from "./config";
 
 type FetchLike = typeof fetch;
 type ConversationMessage = { role: string; content: string };
+type SessionHistory = {
+  conversationHistory: ConversationMessage[];
+  toolMessageCursor: number;
+};
 
 function headers(
   config: HermesClientConfig,
@@ -25,57 +29,94 @@ async function readSessionHistory(
   config: HermesClientConfig,
   fetchImpl: FetchLike,
   signal?: AbortSignal,
-): Promise<ConversationMessage[]> {
+): Promise<SessionHistory> {
   const response = await fetchImpl(
     `${config.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=500&order=oldest`,
     { headers: headers(config, sessionKey), signal },
   );
-  if (response.status === 404) return [];
+  if (response.status === 404) {
+    return { conversationHistory: [], toolMessageCursor: 0 };
+  }
   if (!response.ok) {
     throw new Error(`Hermes session history failed (${response.status})`);
   }
   const body = (await response.json()) as { data?: unknown };
-  if (!Array.isArray(body.data)) return [];
-  return body.data.flatMap((message) => {
+  if (!Array.isArray(body.data)) {
+    return { conversationHistory: [], toolMessageCursor: 0 };
+  }
+  let toolMessageCursor = 0;
+  const conversationHistory = body.data.flatMap((message) => {
     if (
       message === null ||
       typeof message !== "object" ||
       typeof (message as { role?: unknown }).role !== "string" ||
       typeof (message as { content?: unknown }).content !== "string"
     ) return [];
+    const messageId = (message as { id?: unknown }).id;
+    if (typeof messageId === "number" && messageId > toolMessageCursor) {
+      toolMessageCursor = messageId;
+    }
     const { role, content } = message as ConversationMessage;
     return role === "user" || role === "assistant" ? [{ role, content }] : [];
   });
+  return { conversationHistory, toolMessageCursor };
 }
 
-async function readLatestToolOutput(
+async function readNextToolMessage(
   sessionId: string,
   sessionKey: string,
-  toolName: string,
+  expectedToolName: string,
+  cursor: number,
+  consumedToolCallIds: Set<string>,
   config: HermesClientConfig,
   fetchImpl: FetchLike,
   signal?: AbortSignal,
-): Promise<unknown> {
+): Promise<{ messageId: number; output: unknown }> {
   const response = await fetchImpl(
-    `${config.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=20&order=latest`,
+    `${config.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=500&order=oldest`,
     { headers: headers(config, sessionKey), signal },
   );
-  if (!response.ok) return null;
-  const body = (await response.json()) as { data?: unknown };
-  if (!Array.isArray(body.data)) return null;
-  const message = [...body.data].reverse().find((item) =>
-    item !== null &&
-    typeof item === "object" &&
-    (item as { role?: unknown }).role === "tool" &&
-    (item as { tool_name?: unknown }).tool_name === toolName &&
-    typeof (item as { content?: unknown }).content === "string"
-  ) as { content: string } | undefined;
-  if (!message) return null;
-  try {
-    return JSON.parse(message.content) as unknown;
-  } catch {
-    return message.content;
+  if (!response.ok) {
+    throw new Error(`Hermes tool message lookup failed (${response.status})`);
   }
+  const body = (await response.json()) as { data?: unknown };
+  const messages = Array.isArray(body.data) ? body.data : [];
+  const message = messages
+    .flatMap((item) => {
+      if (
+        item === null ||
+        typeof item !== "object" ||
+        (item as { role?: unknown }).role !== "tool" ||
+        typeof (item as { id?: unknown }).id !== "number" ||
+        typeof (item as { tool_call_id?: unknown }).tool_call_id !== "string" ||
+        typeof (item as { tool_name?: unknown }).tool_name !== "string" ||
+        typeof (item as { content?: unknown }).content !== "string"
+      ) return [];
+      return [item as {
+        id: number;
+        tool_call_id: string;
+        tool_name: string;
+        content: string;
+      }];
+    })
+    .filter((item) =>
+      item.id > cursor && !consumedToolCallIds.has(item.tool_call_id)
+    )
+    .sort((left, right) => left.id - right.id)[0];
+  if (!message) {
+    throw new Error("Hermes tool result message is missing");
+  }
+  if (message.tool_name !== expectedToolName) {
+    throw new Error(
+      `Hermes tool result order mismatch: expected ${expectedToolName}, received ${message.tool_name}`,
+    );
+  }
+  consumedToolCallIds.add(message.tool_call_id);
+  let output: unknown = message.content;
+  try {
+    output = JSON.parse(message.content) as unknown;
+  } catch {}
+  return { messageId: message.id, output };
 }
 
 function opaqueReference(): string {
@@ -89,8 +130,8 @@ export async function createHermesRun(
   config: HermesClientConfig,
   fetchImpl: FetchLike = fetch,
   signal?: AbortSignal,
-): Promise<{ runId: string }> {
-  const conversationHistory = await readSessionHistory(
+): Promise<{ runId: string; toolMessageCursor: number }> {
+  const { conversationHistory, toolMessageCursor } = await readSessionHistory(
     sessionId,
     sessionKey,
     config,
@@ -114,7 +155,7 @@ export async function createHermesRun(
   if (typeof body.run_id !== "string" || !body.run_id) {
     throw new Error("Hermes returned an invalid run id");
   }
-  return { runId: body.run_id };
+  return { runId: body.run_id, toolMessageCursor };
 }
 
 function normalizeEvent(
@@ -252,6 +293,7 @@ export async function* streamHermesRun(
   runId: string,
   sessionId: string,
   sessionKey: string,
+  toolMessageCursor: number,
   config: HermesClientConfig,
   signal?: AbortSignal,
   fetchImpl: FetchLike = fetch,
@@ -263,17 +305,24 @@ export async function* streamHermesRun(
   if (!response.ok || !response.body) {
     throw new Error(`Hermes event stream failed (${response.status})`);
   }
+  let cursor = toolMessageCursor;
+  const consumedToolCallIds = new Set<string>();
   for await (const event of parseHermesEventStream(response.body, signal)) {
-    if (event.type === "tool.completed" && event.tool_name === "pupu_cli") {
-      const output = await readLatestToolOutput(
+    if (event.type === "tool.completed") {
+      const toolMessage = await readNextToolMessage(
         sessionId,
         sessionKey,
         event.tool_name,
+        cursor,
+        consumedToolCallIds,
         config,
         fetchImpl,
         signal,
       );
-      yield { ...event, output };
+      cursor = toolMessage.messageId;
+      yield event.tool_name === "pupu_cli"
+        ? { ...event, output: toolMessage.output }
+        : event;
     } else {
       yield event;
     }

@@ -40,7 +40,6 @@ function chatRequest(text = "把牛奶加入购物车") {
     body: JSON.stringify({
       requestId: "journey-1",
       sessionId: "session-1",
-      sessionKey: "user-1",
       messages: [{
         role: "user",
         parts: [{ type: "text", text }],
@@ -51,7 +50,7 @@ function chatRequest(text = "把牛奶加入购物车") {
 
 describe("Hermes chat handler", () => {
   it("sends the user request directly to Hermes without a task contract", async () => {
-    const createRun = vi.fn(async () => ({ runId: "run-1" }));
+    const createRun = vi.fn(async () => ({ runId: "run-1", toolMessageCursor: 12 }));
 
     const response = await handleChatRequest(chatRequest(), {
       createRun,
@@ -62,14 +61,14 @@ describe("Hermes chat handler", () => {
     expect(createRun).toHaveBeenCalledWith(
       "把牛奶加入购物车",
       "session-1",
-      "user-1",
+      "owner-household-f3f3b74a55ae8bf60b6c1172",
       expect.any(AbortSignal),
     );
   });
 
   it("streams only Hermes events and the Hermes result to the frontend", async () => {
     const response = await handleChatRequest(chatRequest(), {
-      createRun: async () => ({ runId: "run-1" }),
+      createRun: async () => ({ runId: "run-1", toolMessageCursor: 12 }),
       streamRun: () => hermesEvents(),
     });
     const body = await response.text();
