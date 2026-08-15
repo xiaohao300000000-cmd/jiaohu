@@ -13,6 +13,8 @@ describe("Hermes Pupu CLI deployment contract", () => {
     expect(config).toContain("memory_enabled: true");
     expect(config).toContain("user_profile_enabled: true");
     expect(config).toContain("complete installed Pupu CLI");
+    expect(config).toContain("tool_search:");
+    expect(config).toContain("enabled: off");
     expect(config).not.toMatch(/readonly|read-only|TaskCoordinator|TaskPhase|nextActions|Harness/i);
     expect(installer).toContain("plugins/pupu_cli");
 
@@ -20,5 +22,7 @@ describe("Hermes Pupu CLI deployment contract", () => {
     expect(config).not.toContain("Start by calling capabilities");
     expect(installer).toContain("skills/pupu-grocery");
     expect(installer).toContain('rm -rf "${hermes_home}/plugins/pupu_readonly"');
+    expect(config).toContain("--household-id");
+    expect(config).not.toContain("--accounts-root");
   });
 });

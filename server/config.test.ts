@@ -29,11 +29,19 @@ describe("getHermesConfig", () => {
       cliPath: "/home/pupu/providers/pupu-cli/.venv/bin/pupu",
       dataRoot: "/home/pupu/providers/pupu-cli/.local/private",
       accountsRoot: "/home/pupu/.local/share/jiaohu/pupu-accounts",
+      householdId: "household-f3f3b74a55ae8bf60b6c1172",
       runtimeRoot: "/home/pupu/.local/state/jiaohu/pupu-login",
       publicOrigin: "https://38.76.171.131:8443",
       attemptTtlMs: 600000,
       resendCooldownMs: 60000,
     });
+  });
+
+  it("uses the stable owner as the Pupu CLI household scope", async () => {
+    const { getPupuLoginConfig } = await import("./config");
+    expect(getPupuLoginConfig({
+      PUPU_OWNER_ID: "household-shared-owner",
+    }).householdId).toBe("household-shared-owner");
   });
 
 });

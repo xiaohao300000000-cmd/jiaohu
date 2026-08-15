@@ -30,6 +30,7 @@ interface LoginRouterDependencies {
     cliPath: string;
     dataRoot: string;
     accountsRoot: string;
+    householdId: string;
     publicOrigin: string;
   };
 }
@@ -65,8 +66,7 @@ export async function handlePupuLoginRequest(
     : undefined;
   const scope: PupuCliScope = {
     cliPath: dependencies.config.cliPath,
-    accountId: session.accountId,
-    accountsRoot: dependencies.config.accountsRoot,
+    householdId: dependencies.config.householdId,
     dataRoot: dependencies.config.dataRoot,
   };
 

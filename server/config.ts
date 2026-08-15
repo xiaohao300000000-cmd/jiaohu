@@ -12,6 +12,7 @@ export interface PupuLoginConfig {
   cliPath: string;
   dataRoot: string;
   accountsRoot: string;
+  householdId: string;
   runtimeRoot: string;
   publicOrigin: string;
   attemptTtlMs: number;
@@ -56,6 +57,7 @@ export function getPupuLoginConfig(
       env.PUPU_ACCOUNTS_ROOT || "/home/pupu/.local/share/jiaohu/pupu-accounts",
       "PUPU_ACCOUNTS_ROOT",
     ),
+    householdId: env.PUPU_OWNER_ID || "household-f3f3b74a55ae8bf60b6c1172",
     runtimeRoot: absolutePath(
       env.PUPU_LOGIN_RUNTIME_ROOT || "/home/pupu/.local/state/jiaohu/pupu-login",
       "PUPU_LOGIN_RUNTIME_ROOT",

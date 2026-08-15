@@ -13,8 +13,7 @@ export interface PupuLoginState {
 
 export interface PupuCliScope {
   cliPath: string;
-  accountId: string;
-  accountsRoot: string;
+  householdId: string;
   dataRoot: string;
 }
 
