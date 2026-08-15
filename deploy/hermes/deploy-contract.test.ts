@@ -20,7 +20,10 @@ describe("Hermes Pupu CLI deployment contract", () => {
 
     expect(config).toContain("If login status returns auth_required, stop");
     expect(config).not.toContain("Start by calling capabilities");
-    expect(installer).toContain("skills/pupu-grocery");
+    expect(installer).toContain('rm -rf "${skill_destination}"');
+    expect(installer).not.toContain(
+      '"${repo_root}/hermes/skills/pupu-grocery/"',
+    );
     expect(installer).toContain('rm -rf "${hermes_home}/plugins/pupu_readonly"');
     expect(config).toContain("--household-id");
     expect(config).not.toContain("--accounts-root");

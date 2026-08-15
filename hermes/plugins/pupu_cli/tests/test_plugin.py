@@ -36,8 +36,13 @@ def test_schema_tells_hermes_to_use_command_group_as_operation():
     context = RecordingContext()
     register(context)
     description = context.tools[0]["schema"]["description"]
+    assert "..." not in description
     assert 'operation="catalog"' in description
     assert 'arguments=["search"' in description
+    assert 'operation="login"' in description
+    assert '"--household-id"' in description
+    assert '"--request-id"' in description
+    assert "Wait for the login result" in description
 
 
 def test_tool_delegates_the_operation_chosen_by_hermes(monkeypatch):
