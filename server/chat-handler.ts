@@ -6,7 +6,7 @@ import {
 } from "../src/ai/hermes-event-adapter";
 import type { JourneyUIMessage } from "../src/ai/journey-ui-message";
 import { getHermesConfig } from "./config";
-import { createHermesRun, streamHermesRun } from "./hermes-client";
+import { createHermesRun, stopHermesRun, streamHermesRun } from "./hermes-client";
 
 interface ChatDependencies {
   createRun?: (
@@ -20,6 +20,7 @@ interface ChatDependencies {
     toolMessageCursor: number,
     signal?: AbortSignal,
   ) => AsyncIterable<HermesRunEvent>;
+  stopRun?: (runId: string) => Promise<void>;
   createId?: () => string;
 }
 
@@ -113,6 +114,9 @@ export async function handleChatRequest(
     dependencies.streamRun ||
     ((runId: string, toolMessageCursor: number, signal?: AbortSignal) =>
       streamHermesRun(runId, sessionId, sessionKey, toolMessageCursor, config, signal));
+  const stopRun =
+    dependencies.stopRun ||
+    ((runId: string) => stopHermesRun(runId, config));
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {
@@ -128,6 +132,13 @@ export async function handleChatRequest(
       for await (const event of streamRun(runId, toolMessageCursor, request.signal)) {
         const mapped = mapHermesEvent(event, context);
         if (mapped) writer.write({ type: "data-journey", data: mapped });
+        if (
+          mapped?.type === "presentation.updated" &&
+          mapped.presentation.component === "pupu.login"
+        ) {
+          await stopRun(runId);
+          break;
+        }
       }
     },
     onError: () => "实时服务暂时不可用，请稍后重试。",

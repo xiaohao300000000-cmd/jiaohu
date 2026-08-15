@@ -33,6 +33,39 @@ async function* hermesEvents(): AsyncGenerator<HermesRunEvent> {
   };
 }
 
+
+async function* authRequiredEvents(): AsyncGenerator<HermesRunEvent> {
+  yield {
+    type: "tool.started",
+    run_id: "run-auth",
+    tool_name: "pupu_cli",
+    tool_call_id: "login-status",
+  };
+  yield {
+    type: "tool.completed",
+    run_id: "run-auth",
+    tool_name: "pupu_cli",
+    tool_call_id: "login-status",
+    output: {
+      schema_version: "1",
+      ok: true,
+      operation: "pupu.login.status",
+      request_id: "auth-status-1",
+      household_id: "household-1",
+      status: "auth_required",
+      data: { auth_present: false },
+      error: null,
+      evidence_ref: null,
+    },
+  };
+  yield {
+    type: "tool.started",
+    run_id: "run-auth",
+    tool_name: "pupu_cli",
+    tool_call_id: "must-not-reach-frontend",
+  };
+}
+
 function chatRequest(text = "把牛奶加入购物车") {
   return new Request("http://localhost/api/chat", {
     method: "POST",
@@ -79,6 +112,22 @@ describe("Hermes chat handler", () => {
     expect(body).toContain("\"summary\":\"购物车已更新\"");
     expect(body).not.toContain("task.updated");
     expect(body).not.toContain("nextActions");
+  });
+
+  it("stops the Hermes run and presents login as soon as Pupu auth expires", async () => {
+    const stopRun = vi.fn(async () => undefined);
+    const response = await handleChatRequest(chatRequest("看看牛肉"), {
+      createRun: async () => ({ runId: "run-auth", toolMessageCursor: 12 }),
+      streamRun: () => authRequiredEvents(),
+      stopRun,
+    });
+    const body = await response.text();
+
+    expect(stopRun).toHaveBeenCalledWith("run-auth");
+    expect(body).toContain('"component":"pupu.login"');
+    expect(body).toContain('"phase":"phone"');
+    expect(body).not.toContain("must-not-reach-frontend");
+    expect(body).not.toContain("服务暂时没有回应");
   });
 
   it("rejects a request without user text", async () => {

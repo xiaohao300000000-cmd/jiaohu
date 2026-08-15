@@ -15,6 +15,10 @@ describe("Hermes Pupu CLI deployment contract", () => {
     expect(config).toContain("complete installed Pupu CLI");
     expect(config).not.toMatch(/readonly|read-only|TaskCoordinator|TaskPhase|nextActions|Harness/i);
     expect(installer).toContain("plugins/pupu_cli");
+
+    expect(config).toContain("If login status returns auth_required, stop");
+    expect(config).not.toContain("Start by calling capabilities");
+    expect(installer).toContain("skills/pupu-grocery");
     expect(installer).toContain('rm -rf "${hermes_home}/plugins/pupu_readonly"');
   });
 });
