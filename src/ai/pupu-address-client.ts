@@ -1,5 +1,3 @@
-import type { TaskSnapshot } from "../domain/task-contract";
-
 export interface SavedPupuAddress {
   id: string;
   label: string;
@@ -41,10 +39,7 @@ export function createPupuAddressClient(fetcher: typeof fetch = fetch) {
       if (!Array.isArray(addresses)) throw new Error("invalid Pupu address response");
       return { addresses: addresses.map(validateAddress) };
     },
-    async select(
-      task: Pick<TaskSnapshot, "taskId" | "version">,
-      receiverId: string,
-    ): Promise<TaskSnapshot> {
+    async select(receiverId: string): Promise<void> {
       if (!/^[A-Za-z0-9-]{1,64}$/.test(receiverId)) {
         throw new Error("invalid Pupu address");
       }
@@ -52,25 +47,11 @@ export function createPupuAddressClient(fetcher: typeof fetch = fetch) {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          taskId: task.taskId,
-          taskVersion: task.version,
-          receiverId,
-        }),
-      }));
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        body: JSON.stringify({ receiverId }),
+      })) as { selected?: unknown; addressId?: unknown };
+      if (value.selected !== true || value.addressId !== receiverId) {
         throw new Error("invalid Pupu address response");
       }
-      const next = (value as { task?: unknown }).task;
-      if (
-        !next ||
-        typeof next !== "object" ||
-        (next as { taskId?: unknown }).taskId !== task.taskId ||
-        !Number.isInteger((next as { version?: unknown }).version)
-      ) {
-        throw new Error("invalid Pupu address response");
-      }
-      return next as TaskSnapshot;
     },
   };
 }

@@ -1,8 +1,37 @@
+import type { ReactNode } from "react";
 import { LiquidJourney } from "./LiquidJourney";
-import type { JourneySnapshot } from "./types";
+import type { JourneyPresentation, JourneySnapshot } from "./types";
 import { PupuPurchaseCard } from "../pupu/PupuPurchaseCard";
 import { PupuLoginJourney } from "../pupu/PupuLoginJourney";
 import { PupuAddressJourney } from "../pupu/PupuAddressJourney";
+
+type PupuPresentation = Extract<
+  JourneyPresentation,
+  { component: "pupu.purchase-plan" }
+>;
+
+interface PresentationRendererContext {
+  instanceId: string;
+  runId?: string;
+  readOnly: boolean;
+}
+
+type PupuRenderer = (
+  presentation: PupuPresentation,
+  context: PresentationRendererContext,
+) => ReactNode;
+
+const presentationRenderers = {
+  "pupu.purchase-plan": ((presentation, context) => (
+    <PupuPurchaseCard
+      presentation={presentation}
+      instanceId={context.instanceId}
+      runId={context.runId}
+      readOnly={context.readOnly}
+      enableCommerce={!context.readOnly}
+    />
+  )) satisfies PupuRenderer,
+};
 
 interface JourneyPresentationRendererProps {
   snapshot: JourneySnapshot;
@@ -15,15 +44,6 @@ interface JourneyPresentationRendererProps {
   onAddressSelect?: (receiverId: string) => void;
   onAddressRetry?: () => void;
 }
-
-const FINAL_PLAN_PHASES = new Set([
-  "awaiting_cart_confirmation",
-  "writing_cart",
-  "awaiting_order_confirmation",
-  "creating_order",
-  "awaiting_payment",
-  "completed",
-]);
 
 export function JourneyPresentationRenderer({
   snapshot,
@@ -61,17 +81,12 @@ export function JourneyPresentationRenderer({
       />
     );
   }
-  if (
-    snapshot.task?.finalPlan &&
-    snapshot.task.context.selectedProducts.length > 0 &&
-    FINAL_PLAN_PHASES.has(snapshot.task.phase)
-  ) {
-    return (
-      <PupuPurchaseCard
-        task={snapshot.task}
-        instanceId={snapshot.activeRequestId || "idle"}
-      />
-    );
+  if (presentation?.component === "pupu.purchase-plan") {
+    return presentationRenderers["pupu.purchase-plan"](presentation, {
+      instanceId: snapshot.activeRequestId || "idle",
+      runId: snapshot.runId || undefined,
+      readOnly: true,
+    });
   }
 
   return <LiquidJourney snapshot={snapshot} onRetry={onRetry} />;

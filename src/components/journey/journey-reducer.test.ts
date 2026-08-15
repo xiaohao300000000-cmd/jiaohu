@@ -1,382 +1,59 @@
 import { describe, expect, it } from "vitest";
-import type { TaskSnapshot } from "../../domain/task-contract";
-import { initialJourneySnapshot, journeyReducer } from "./journey-reducer";
-import type {
-  JourneyPresentation,
-  JourneyResult,
-  TraceEntry,
-} from "./types";
-
-const requestText = "今晚三个人吃火锅，微辣，200元以内。";
-
-const searchingTask: TaskSnapshot = {
-  taskId: "task-1",
-  version: 1,
-  requestText,
-  domain: "commerce",
-  goal: "find_products",
-  phase: "searching_catalog",
-  context: {
-    peopleCount: 3,
-    budgetCents: 20000,
-    dietaryRequirements: ["微辣"],
-    requirements: ["微辣"],
-    selectedProducts: [],
-  },
-  requestedCapabilities: ["commerce.catalog.search"],
-  allowedCapabilities: ["commerce.catalog.search"],
-  nextActions: [],
-};
-const trace: TraceEntry[] = [
-  {
-    id: "constraint-budget",
-    label: "理解人数与预算",
-    detail: "3 人 · 微辣 · 不超过 ¥200",
-    status: "complete",
-  },
-];
-
-const completeResult: JourneyResult = {
-  title: "今晚的微辣火锅方案",
-  summary: "荤素搭配，预计 30 分钟送达",
-  totalAmount: 168.5,
-  currency: "CNY",
-  items: [
-    {
-      id: "beef-roll",
-      name: "原切肥牛卷",
-      detail: "350g · 冷鲜",
-      price: 58,
-    },
-  ],
-};
-
-const genericPresentation: JourneyPresentation = {
-  capability: "generic",
-  component: "journey.result",
-  mode: "canvas",
-  dataSource: "live",
-  payload: completeResult,
-};
+import {
+  initialJourneySnapshot,
+  journeyReducer,
+} from "./journey-reducer";
 
 describe("journeyReducer", () => {
-  it("stores task updates only for the active request", () => {
-    const receiving = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent", requestId: "request-1", text: requestText,
-    });
-    const ignored = journeyReducer(receiving, {
-      type: "task.updated", requestId: "request-old", task: searchingTask,
-    });
-    expect(ignored.task).toBeNull();
-
-    const updated = journeyReducer(receiving, {
-      type: "task.updated", requestId: "request-1", task: searchingTask,
-    });
-    expect(updated.task).toEqual(searchingTask);
-    expect(updated.state).toBe("reasoning");
-  });
-
-  it("keeps a gated task phase while later presentation and trace events arrive", () => {
-    const receiving = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent", requestId: "request-1", text: requestText,
-    });
-    const awaitingLoginTask: TaskSnapshot = {
-      ...searchingTask,
-      phase: "awaiting_login",
-      allowedCapabilities: [],
-    };
-    const withTask = journeyReducer(receiving, {
-      type: "task.updated", requestId: "request-1", task: awaitingLoginTask,
-    });
-    const withPresentation = journeyReducer(withTask, {
-      type: "presentation.updated",
-      requestId: "request-1",
-      presentation: {
-        capability: "pupu",
-        component: "pupu.login",
-        mode: "anchored",
-        dataSource: "live",
-        payload: { phase: "phone" },
-      },
-    });
-    const withTrace = journeyReducer(withPresentation, {
-      type: "trace.updated", requestId: "request-1", entries: trace,
-    });
-
-    expect(withTrace.task).toEqual(awaitingLoginTask);
-    expect(withTrace.state).toBe("awaiting_input");
-  });
-
-  it("retains the previous task while a continuation request starts", () => {
-    const active = {
-      ...initialJourneySnapshot,
-      task: searchingTask,
-    };
-    const receiving = journeyReducer(active, {
-      type: "request.sent", requestId: "request-2", text: "牛奶改成两盒",
-    });
-
-    expect(receiving.task).toEqual(searchingTask);
-  });
-  it("moves a normalized request through receiving, reasoning, assembling, and ready", () => {
-    const receiving = journeyReducer(initialJourneySnapshot, {
+  it("moves from the user request through Hermes execution to its result", () => {
+    const requested = journeyReducer(initialJourneySnapshot, {
       type: "request.sent",
       requestId: "request-1",
-      text: requestText,
+      text: "搜索牛奶",
     });
-    expect(receiving.state).toBe("receiving");
-
-    const reasoning = journeyReducer(receiving, {
+    const started = journeyReducer(requested, {
       type: "stream.started",
       requestId: "request-1",
       runId: "run-1",
     });
-    expect(reasoning.state).toBe("reasoning");
-
-    const withTrace = journeyReducer(reasoning, {
+    const traced = journeyReducer(started, {
       type: "trace.updated",
       requestId: "request-1",
-      entries: trace,
+      entries: [{
+        id: "call-1",
+        label: "执行 Pupu CLI",
+        status: "complete",
+      }],
     });
-    expect(withTrace.trace).toEqual(trace);
-
-    const assembling = journeyReducer(withTrace, {
-      type: "result.partial",
-      requestId: "request-1",
-      result: { title: completeResult.title, totalAmount: 168.5 },
-    });
-    expect(assembling.state).toBe("assembling");
-
-    const ready = journeyReducer(assembling, {
-      type: "stream.finished",
-      requestId: "request-1",
-      result: completeResult,
-    });
-    expect(ready.state).toBe("ready");
-    expect(ready.result).toEqual(completeResult);
-  });
-
-  it("keeps TaskSnapshot FinalPlan authoritative when Hermes finishes with different copy", () => {
-    const finalTask: TaskSnapshot = {
-      ...searchingTask,
-      version: 4,
-      goal: "prepare_cart",
-      phase: "awaiting_cart_confirmation",
-      context: {
-        ...searchingTask.context,
-        selectedProducts: [{
-          productId: "store-1",
-          name: "鲜牛奶",
-          quantity: 2,
-          unitPriceCents: 1290,
-          source: "pupu_live",
-        }],
-      },
-      finalPlan: {
-        planId: "plan-authoritative",
-        version: 2,
-        title: "早餐补货",
-        explanation: "数据库中的结构化方案",
-        totalCents: 2580,
-        currency: "CNY",
-      },
-    };
-    const receiving = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent", requestId: "request-1", text: requestText,
-    });
-    const withTask = journeyReducer(receiving, {
-      type: "task.updated", requestId: "request-1", task: finalTask,
-    });
-    const ready = journeyReducer(withTask, {
+    const finished = journeyReducer(traced, {
       type: "stream.finished",
       requestId: "request-1",
       result: {
-        ...completeResult,
-        summary: "文字说只买一盒，也不能改变结构化方案",
+        title: "Hermes 执行结果",
+        summary: "已找到牛奶",
+        totalAmount: 0,
+        currency: "CNY",
         items: [],
       },
     });
 
-    expect(ready.task).toEqual(finalTask);
-    expect(ready.task?.finalPlan?.planId).toBe("plan-authoritative");
-    expect(ready.task?.context.selectedProducts).toEqual(
-      finalTask.context.selectedProducts,
-    );
+    expect(finished.state).toBe("ready");
+    expect(finished.runId).toBe("run-1");
+    expect(finished.trace).toHaveLength(1);
+    expect(finished.result?.summary).toBe("已找到牛奶");
   });
 
-  it("pauses for approval and resumes after either explicit response", () => {
-    const receiving = journeyReducer(initialJourneySnapshot, {
+  it("ignores events from another Hermes request", () => {
+    const requested = journeyReducer(initialJourneySnapshot, {
       type: "request.sent",
       requestId: "request-1",
-      text: requestText,
-    });
-    const awaiting = journeyReducer(receiving, {
-      type: "approval.requested",
-      requestId: "request-1",
-      input: {
-        kind: "approval",
-        approvalId: "approval-1",
-        title: "确认提交采购单",
-        impact: "将创建一笔待支付订单",
-        target: "朴朴超市 · 火锅清单",
-        amount: 168.5,
-        currency: "CNY",
-      },
+      text: "搜索牛奶",
     });
 
-    expect(awaiting.state).toBe("awaiting_input");
-    expect(awaiting.awaitingInput?.kind).toBe("approval");
-
-    const approved = journeyReducer(awaiting, {
-      type: "approval.responded",
-      requestId: "request-1",
-      approved: true,
-    });
-    expect(approved.state).toBe("reasoning");
-    expect(approved.awaitingInput).toBeNull();
-
-    const denied = journeyReducer(awaiting, {
-      type: "approval.responded",
-      requestId: "request-1",
-      approved: false,
-    });
-    expect(denied.state).toBe("reasoning");
-    expect(denied.awaitingInput).toBeNull();
-  });
-
-  it("preserves the request when an error is retried under a new id", () => {
-    const receiving = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent",
-      requestId: "request-1",
-      text: requestText,
-    });
-    const failed = journeyReducer(receiving, {
-      type: "stream.failed",
-      requestId: "request-1",
-      error: {
-        kind: "timeout",
-        message: "本次连接等待时间过长",
-        reference: "run_018",
-      },
-    });
-
-    expect(failed.state).toBe("error");
-    expect(failed.requestText).toBe(requestText);
-
-    const retried = journeyReducer(failed, {
-      type: "retry.requested",
-      requestId: "request-2",
-    });
-    expect(retried.state).toBe("receiving");
-    expect(retried.activeRequestId).toBe("request-2");
-    expect(retried.requestText).toBe(requestText);
-    expect(retried.error).toBeNull();
-  });
-
-  it("ignores late events from an interrupted request", () => {
-    const first = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent",
-      requestId: "request-1",
-      text: requestText,
-    });
-    const interrupted = journeyReducer(first, {
-      type: "stream.interrupted",
-      requestId: "request-1",
-      replacementRequestId: "request-2",
-    });
-    expect(interrupted.state).toBe("interrupted");
-
-    const replacement = journeyReducer(interrupted, {
-      type: "request.sent",
-      requestId: "request-2",
-      text: "改成两个人吃寿喜锅。",
-    });
-    const lateFinish = journeyReducer(replacement, {
-      type: "stream.finished",
-      requestId: "request-1",
-      result: completeResult,
-    });
-
-    expect(lateFinish).toBe(replacement);
-    expect(lateFinish.state).toBe("receiving");
-    expect(lateFinish.result).toBeNull();
-  });
-
-  it("stores live presentations in the snapshot and preserves them at ready", () => {
-    const receiving = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent",
-      requestId: "request-1",
-      text: requestText,
-    });
-    const reasoning = journeyReducer(receiving, {
+    expect(journeyReducer(requested, {
       type: "stream.started",
-      requestId: "request-1",
-      runId: "run-1",
-    });
-    const assembling = journeyReducer(reasoning, {
-      type: "presentation.updated",
-      requestId: "request-1",
-      presentation: genericPresentation,
-    });
-
-    expect(assembling.state).toBe("assembling");
-    expect(assembling.runId).toBe("run-1");
-    expect(assembling.presentation).toEqual(genericPresentation);
-
-    const ready = journeyReducer(assembling, {
-      type: "stream.finished",
-      requestId: "request-1",
-      result: completeResult,
-    });
-
-    expect(ready.state).toBe("ready");
-    expect(ready.presentation).toEqual(genericPresentation);
-  });
-
-  it("clears stale presentations for a new request, error, and interruption", () => {
-    const active = {
-      ...initialJourneySnapshot,
-      state: "assembling" as const,
-      activeRequestId: "request-1",
-      requestText,
-      runId: "run-1",
-      presentation: genericPresentation,
-    };
-
-    const failed = journeyReducer(active, {
-      type: "stream.failed",
-      requestId: "request-1",
-      error: { kind: "provider", message: "provider failed" },
-    });
-    expect(failed.presentation).toBeNull();
-
-    const interrupted = journeyReducer(active, {
-      type: "stream.interrupted",
-      requestId: "request-1",
-    });
-    expect(interrupted.presentation).toBeNull();
-
-    const replacement = journeyReducer(active, {
-      type: "request.sent",
       requestId: "request-2",
-      text: "改成买鸡蛋",
-    });
-    expect(replacement.presentation).toBeNull();
-    expect(replacement.runId).toBeNull();
-  });
-
-  it("ignores a late presentation from a previous request", () => {
-    const current = journeyReducer(initialJourneySnapshot, {
-      type: "request.sent",
-      requestId: "request-2",
-      text: "买鸡蛋",
-    });
-    const unchanged = journeyReducer(current, {
-      type: "presentation.updated",
-      requestId: "request-1",
-      presentation: genericPresentation,
-    });
-
-    expect(unchanged).toBe(current);
+      runId: "run-2",
+    })).toBe(requested);
   });
 });

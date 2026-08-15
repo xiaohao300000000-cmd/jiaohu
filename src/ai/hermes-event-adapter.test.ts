@@ -20,7 +20,7 @@ describe("mapHermesEvent", () => {
         {
           type: "tool.started",
           run_id: runId,
-          tool_name: "pupu_search_catalog",
+          tool_name: "pupu_cli",
           tool_call_id: "call-1",
         },
         context,
@@ -31,8 +31,8 @@ describe("mapHermesEvent", () => {
       entries: [
         {
           id: "call-1",
-          label: "搜索朴朴商品",
-          detail: "正在读取实时商品信息",
+          label: "执行 Pupu CLI",
+          detail: "Hermes 正在调用 Pupu CLI",
           status: "active",
         },
       ],
@@ -42,7 +42,7 @@ describe("mapHermesEvent", () => {
       {
         type: "tool.completed",
         run_id: runId,
-        tool_name: "pupu_search_catalog",
+        tool_name: "pupu_cli",
         tool_call_id: "call-1",
         output: {
           schema_version: "1",
@@ -74,21 +74,28 @@ describe("mapHermesEvent", () => {
       context,
     );
 
-    expect(pupu).toEqual({
-      type: "trace.updated",
+    expect(pupu).toMatchObject({
+      type: "presentation.updated",
       requestId,
-      entries: context.trace,
-    });
-    expect(context.products).toMatchObject([
-      {
-        productId: "store-product-1",
-        name: "鲜牛奶",
-        specification: "950ml",
-        unitPrice: 12.9,
-        stockStatus: "in_stock",
+      presentation: {
+        capability: "pupu",
+        component: "pupu.purchase-plan",
+        dataSource: "live",
+        payload: {
+          products: [
+            {
+              productId: "store-product-1",
+              name: "鲜牛奶",
+              specification: "950ml",
+              unitPrice: 12.9,
+              stockStatus: "in_stock",
+            },
+          ],
+          estimatedTotal: 12.9,
+        },
       },
-    ]);
-    expect(JSON.stringify(pupu)).not.toContain("pupu.purchase-plan");
+    });
+    expect(JSON.stringify(pupu)).not.toMatch(/"budget"|"total":/);
 
     expect(
       mapHermesEvent(
@@ -105,9 +112,16 @@ describe("mapHermesEvent", () => {
       result: {
         title: "朴朴实时方案",
         summary: "已找到 1 件实时商品",
-        totalAmount: 0,
+        totalAmount: 12.9,
         currency: "CNY",
-        items: [],
+        items: [
+          {
+            id: "store-product-1",
+            name: "鲜牛奶",
+            detail: "950ml",
+            price: 12.9,
+          },
+        ],
       },
     });
   });
@@ -160,7 +174,7 @@ describe("mapHermesEvent", () => {
       {
         type: "tool.completed",
         run_id: runId,
-        tool_name: "pupu_search_catalog",
+        tool_name: "pupu_cli",
         tool_call_id: "call-invalid",
         output: {
           schema_version: "1",
@@ -197,7 +211,7 @@ describe("mapHermesEvent", () => {
       {
         type: "tool.started",
         run_id: runId,
-        tool_name: "pupu_auth_status",
+        tool_name: "pupu_cli",
         tool_call_id: "auth-call",
       },
       context,
@@ -207,7 +221,7 @@ describe("mapHermesEvent", () => {
       {
         type: "tool.completed",
         run_id: runId,
-        tool_name: "pupu_auth_status",
+        tool_name: "pupu_cli",
         tool_call_id: "auth-call",
         output: {
           schema_version: "1",
@@ -239,29 +253,6 @@ describe("mapHermesEvent", () => {
     expect(
       mapHermesEvent(
         {
-          type: "tool.started",
-          run_id: runId,
-          tool_name: "pupu_capabilities",
-          tool_call_id: "late-capabilities",
-        },
-        context,
-      ),
-    ).toBeNull();
-    expect(
-      mapHermesEvent(
-        {
-          type: "tool.completed",
-          run_id: runId,
-          tool_name: "pupu_capabilities",
-          tool_call_id: "late-capabilities",
-          output: { ignored: true },
-        },
-        context,
-      ),
-    ).toBeNull();
-    expect(
-      mapHermesEvent(
-        {
           type: "run.completed",
           run_id: runId,
           output: { summary: "provider failure must not become ready" },
@@ -270,5 +261,4 @@ describe("mapHermesEvent", () => {
       ),
     ).toBeNull();
   });
-
 });

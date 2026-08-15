@@ -21,7 +21,7 @@ describe("QuickResultCard", () => {
 });
 
 describe("AgentHome capability promise", () => {
-  it("offers only the currently implemented Pupu read-only capabilities", () => {
+  it("offers direct Pupu requests", () => {
     render(
       <AgentHome
         activeTask={null}

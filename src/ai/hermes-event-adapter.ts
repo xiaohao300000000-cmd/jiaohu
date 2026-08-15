@@ -8,7 +8,6 @@ import type {
 
 const normalizedSkuSchema = z
   .object({
-    candidate_id: z.string().uuid().optional(),
     store_product_id: z.string().min(1),
     product_id: z.string().min(1),
     name: z.string().min(1),
@@ -38,7 +37,6 @@ const cliEnvelopeSchema = z
       })
       .passthrough()
       .nullable(),
-    next_actions: z.array(z.string()),
     evidence_ref: z.string().nullable(),
   })
   .passthrough();
@@ -76,29 +74,9 @@ export interface HermesEventContext {
 }
 
 const toolPresentation: Record<string, { label: string; detail: string }> = {
-  pupu_capabilities: {
-    label: "检查朴朴能力",
-    detail: "正在确认只读能力边界",
-  },
-  pupu_auth_status: {
-    label: "检查朴朴登录状态",
-    detail: "正在读取当前账号状态",
-  },
-  pupu_search_catalog: {
-    label: "搜索朴朴商品",
-    detail: "正在读取实时商品信息",
-  },
-  pupu_search_meal_catalog: {
-    label: "组合检索三道菜食材",
-    detail: "正在依次读取瘦蛋白、蔬菜和核心配料",
-  },
-  pupu_get_product: {
-    label: "读取商品详情",
-    detail: "正在核对实时商品详情",
-  },
-  pupu_read_cart: {
-    label: "读取朴朴购物车",
-    detail: "正在读取购物车，不会进行修改",
+  pupu_cli: {
+    label: "执行 Pupu CLI",
+    detail: "Hermes 正在调用 Pupu CLI",
   },
 };
 
@@ -132,9 +110,7 @@ function extractItems(data: unknown): unknown[] | null {
 
 function toProduct(input: z.infer<typeof normalizedSkuSchema>): ProductSummary {
   return {
-    candidateId: input.candidate_id,
     productId: input.store_product_id,
-    providerProductId: input.product_id,
     name: input.name,
     specification: input.unit || "规格以朴朴实时信息为准",
     unitPrice: input.price_cents / 100,
@@ -146,16 +122,28 @@ function toProduct(input: z.infer<typeof normalizedSkuSchema>): ProductSummary {
 }
 
 function journeyResult(
+  products: ProductSummary[],
   summary?: string,
 ): JourneyResult {
+  const totalAmount = products.reduce(
+    (sum, product) => sum + product.unitPrice * product.quantity,
+    0,
+  );
   return {
     title: "朴朴实时方案",
     summary:
       summary ||
-      "实时查询已完成",
-    totalAmount: 0,
+      (products.length > 0
+        ? `已找到 ${products.length} 件实时商品`
+        : "实时查询已完成"),
+    totalAmount,
     currency: "CNY",
-    items: [],
+    items: products.map((product) => ({
+      id: product.productId,
+      name: product.name,
+      detail: product.specification,
+      price: product.unitPrice * product.quantity,
+    })),
   };
 }
 
@@ -203,7 +191,11 @@ function mapPupuOutput(
     try {
       rawOutput = JSON.parse(rawOutput);
     } catch {
-      return invalidResult(context);
+      return {
+        type: "trace.updated",
+        requestId: context.requestId,
+        entries: context.trace,
+      };
     }
   }
 
@@ -225,34 +217,46 @@ function mapPupuOutput(
     };
   }
 
-  if (
-    event.tool_name !== "pupu_search_catalog" &&
-    event.tool_name !== "pupu_search_meal_catalog" &&
-    event.tool_name !== "pupu_get_product" &&
-    event.tool_name !== "pupu_read_cart"
-  ) {
+  const items = extractItems(envelope.data.data);
+  if (items === null) {
     return {
       type: "trace.updated",
       requestId: context.requestId,
       entries: context.trace,
     };
   }
-
-  const items = extractItems(envelope.data.data);
-  if (items === null) return invalidResult(context);
   const parsedProducts = z.array(normalizedSkuSchema).safeParse(items);
   if (!parsedProducts.success) return invalidResult(context);
 
   const products = parsedProducts.data.map(toProduct);
-  context.products = [
-    ...new Map(
-      [...context.products, ...products].map((product) => [product.productId, product]),
-    ).values(),
-  ];
+  context.products = products;
+  const total = products.reduce(
+    (sum, product) => sum + product.unitPrice * product.quantity,
+    0,
+  );
   return {
-    type: "trace.updated",
+    type: "presentation.updated",
     requestId: context.requestId,
-    entries: context.trace,
+    presentation: {
+      capability: "pupu",
+      component: "pupu.purchase-plan",
+      mode: "canvas",
+      dataSource: "live",
+      payload: {
+        stage: "cart_ready",
+        title: "朴朴实时商品方案",
+        summary: `根据“${context.requestText}”读取了 ${products.length} 件实时商品。`,
+        meal: "按需采购",
+        people: 1,
+        constraints: ["仅使用 Pupu CLI 返回数据"],
+        decisionSummary: "商品、价格与库存均来自本次朴朴 CLI 实时读取。",
+        products,
+        estimatedTotal: total,
+        currency: "CNY",
+        cartVersion: 0,
+        estimatedDelivery: "以朴朴实时页面为准",
+      },
+    },
   };
 }
 
@@ -260,7 +264,6 @@ export function mapHermesEvent(
   event: HermesRunEvent,
   context: HermesEventContext,
 ): JourneyEvent | null {
-  if (context.terminalFailure) return null;
   switch (event.type) {
     case "run.started":
       return {
@@ -270,8 +273,8 @@ export function mapHermesEvent(
       };
     case "tool.started": {
       const presentation = toolPresentation[event.tool_name] || {
-        label: "执行只读工具",
-        detail: "正在读取实时数据",
+        label: "执行 Hermes 工具",
+        detail: event.tool_name,
       };
       context.trace = [
         ...context.trace.map((entry) => ({
@@ -297,7 +300,7 @@ export function mapHermesEvent(
           ? { ...entry, status: "complete" as const }
           : entry,
       );
-      if (event.tool_name.startsWith("pupu_")) {
+      if (event.tool_name === "pupu_cli") {
         return mapPupuOutput(event, context);
       }
       return {
@@ -311,7 +314,7 @@ export function mapHermesEvent(
       return {
         type: "stream.finished",
         requestId: context.requestId,
-        result: journeyResult(event.output?.summary),
+        result: journeyResult(context.products, event.output?.summary),
       };
     case "run.failed": {
       context.terminalFailure = true;
