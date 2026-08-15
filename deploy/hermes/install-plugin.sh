@@ -16,6 +16,7 @@ ensure_env_entry() {
 
 install -d -m 700 "${hermes_home}" "${hermes_home}/plugins"
 install -d -m 700 "${plugin_destination}"
+rm -rf "${hermes_home}/plugins/pupu_readonly"
 rsync -a --delete --exclude "__pycache__" \
   "${repo_root}/hermes/plugins/pupu_cli/" "${plugin_destination}/"
 

@@ -8,7 +8,11 @@ plugins:
     - pupu-cli
 
 platform_toolsets:
-  api_server: [pupu_cli]
+  api_server: [pupu_cli, memory, skills, session_search]
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
 
 platforms:
   api_server:

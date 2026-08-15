@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createHermesRun,
   parseHermesEventStream,
+  streamHermesRun,
   type HermesClientConfig,
 } from "./hermes-client";
 
@@ -20,13 +21,24 @@ function chunkedStream(chunks: string[], onCancel?: () => void) {
 }
 
 describe("Hermes client", () => {
-  it("creates a run with a server-only bearer token and session", async () => {
-    const fetchMock = vi.fn(async () =>
+  it("continues a native session and scopes long-term memory with Session-Key", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        object: "list",
+        session_id: "session-1",
+        data: [
+          { role: "user", content: "找牛奶" },
+          { role: "assistant", content: "找到了两个商品" },
+        ],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(
       new Response(JSON.stringify({ run_id: "run-1", status: "started" }), {
         status: 202,
         headers: { "content-type": "application/json" },
-      }),
-    );
+      }));
     const config: HermesClientConfig = {
       baseUrl: "http://127.0.0.1:8642",
       apiKey: "server-secret",
@@ -35,11 +47,20 @@ describe("Hermes client", () => {
     const result = await createHermesRun(
       "找牛奶",
       "session-1",
+      "user-scope-1",
       config,
       fetchMock,
     );
 
     expect(result).toEqual({ runId: "run-1" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8642/api/sessions/session-1/messages?limit=500&order=oldest",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Hermes-Session-Key": "user-scope-1",
+        }),
+      }),
+    );
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8642/v1/runs",
       expect.objectContaining({
@@ -47,13 +68,34 @@ describe("Hermes client", () => {
         headers: expect.objectContaining({
           authorization: "Bearer server-secret",
           "content-type": "application/json",
+          "X-Hermes-Session-Key": "user-scope-1",
         }),
         body: JSON.stringify({
           input: "找牛奶",
           session_id: "session-1",
+          conversation_history: [
+            { role: "user", content: "找牛奶" },
+            { role: "assistant", content: "找到了两个商品" },
+          ],
         }),
       }),
     );
+  });
+
+  it("starts with empty history when the Hermes session does not exist yet", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(Response.json({ run_id: "run-2" }, { status: 202 }));
+
+    await createHermesRun("找苹果", "session-new", "user-scope-1", {
+      baseUrl: "http://127.0.0.1:8642",
+    }, fetchMock);
+
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+      input: "找苹果",
+      session_id: "session-new",
+      conversation_history: [],
+    });
   });
 
   it("reconstructs split SSE frames and ignores comments", async () => {
@@ -82,6 +124,56 @@ describe("Hermes client", () => {
         output: { summary: "done" },
       },
     ]);
+  });
+
+  it("hydrates a completed Pupu tool event from the native Hermes session", async () => {
+    const eventStream = chunkedStream([
+      "event: tool.started\ndata: {\"run_id\":\"run-1\",\"tool\":\"pupu_cli\"}\n\n",
+      "event: tool.completed\ndata: {\"run_id\":\"run-1\",\"tool\":\"pupu_cli\"}\n\n",
+    ]);
+    const cliResult = {
+      schema_version: "1",
+      ok: true,
+      operation: "pupu.capabilities",
+      status: "succeeded",
+      data: { operations: ["catalog search"] },
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(eventStream, { status: 200 }))
+      .mockResolvedValueOnce(Response.json({
+        object: "list",
+        data: [{
+          role: "tool",
+          tool_name: "pupu_cli",
+          content: JSON.stringify(cliResult),
+        }],
+      }));
+
+    const events = [];
+    for await (const event of streamHermesRun(
+      "run-1",
+      "session-1",
+      "user-scope-1",
+      { baseUrl: "http://127.0.0.1:8642", apiKey: "secret" },
+      undefined,
+      fetchMock,
+    )) {
+      events.push(event);
+    }
+
+    expect(events[1]).toEqual(expect.objectContaining({
+      type: "tool.completed",
+      tool_name: "pupu_cli",
+      output: cliResult,
+    }));
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "http://127.0.0.1:8642/api/sessions/session-1/messages?limit=20&order=latest",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Hermes-Session-Key": "user-scope-1",
+        }),
+      }),
+    );
   });
 
   it("maps malformed JSON to invalid_result", async () => {

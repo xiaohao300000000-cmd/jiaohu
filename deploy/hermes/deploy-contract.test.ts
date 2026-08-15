@@ -7,10 +7,14 @@ describe("Hermes Pupu CLI deployment contract", () => {
     const installer = await readFile("deploy/hermes/install-plugin.sh", "utf8");
 
     expect(config).toContain("- pupu-cli");
-    expect(config).toContain("api_server: [pupu_cli]");
+    expect(config).toContain(
+      "api_server: [pupu_cli, memory, skills, session_search]",
+    );
+    expect(config).toContain("memory_enabled: true");
+    expect(config).toContain("user_profile_enabled: true");
     expect(config).toContain("complete installed Pupu CLI");
     expect(config).not.toMatch(/readonly|read-only|TaskCoordinator|TaskPhase|nextActions|Harness/i);
     expect(installer).toContain("plugins/pupu_cli");
-    expect(installer).not.toContain("pupu_readonly");
+    expect(installer).toContain('rm -rf "${hermes_home}/plugins/pupu_readonly"');
   });
 });

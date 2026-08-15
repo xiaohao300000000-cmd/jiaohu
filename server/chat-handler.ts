@@ -12,6 +12,7 @@ interface ChatDependencies {
   createRun?: (
     input: string,
     sessionId: string,
+    sessionKey: string,
     signal?: AbortSignal,
   ) => Promise<{ runId: string }>;
   streamRun?: (
@@ -67,6 +68,10 @@ function stringField(body: unknown, field: string): string | undefined {
   return undefined;
 }
 
+function validId(value: string | undefined): value is string {
+  return Boolean(value && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(value));
+}
+
 export async function handleChatRequest(
   request: Request,
   dependencies: ChatDependencies = {},
@@ -86,26 +91,33 @@ export async function handleChatRequest(
   }
 
   const requestedId = stringField(body, "requestId");
-  const sessionId =
-    requestedId && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(requestedId)
+  const requestId = validId(requestedId)
       ? requestedId
       : dependencies.createId?.() || `journey-${crypto.randomUUID()}`;
+  const sessionId = stringField(body, "sessionId");
+  const sessionKey = stringField(body, "sessionKey");
+  if (!validId(sessionId) || !validId(sessionKey)) {
+    return Response.json(
+      { error: { code: "invalid_request", message: "缺少 Hermes 会话标识。" } },
+      { status: 400 },
+    );
+  }
 
   const config = getHermesConfig();
   const createRun =
     dependencies.createRun ||
-    ((text: string, id: string, signal?: AbortSignal) =>
-      createHermesRun(text, id, config, fetch, signal));
+    ((text: string, id: string, key: string, signal?: AbortSignal) =>
+      createHermesRun(text, id, key, config, fetch, signal));
   const streamRun =
     dependencies.streamRun ||
     ((runId: string, signal?: AbortSignal) =>
-      streamHermesRun(runId, config, signal));
+      streamHermesRun(runId, sessionId, sessionKey, config, signal));
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {
-      const { runId } = await createRun(input, sessionId, request.signal);
+      const { runId } = await createRun(input, sessionId, sessionKey, request.signal);
       writer.write({ type: "message-metadata", messageMetadata: { runId } });
-      const context = createHermesEventContext(sessionId, input, runId);
+      const context = createHermesEventContext(requestId, input, runId);
       const started = mapHermesEvent(
         { type: "run.started", run_id: runId },
         context,

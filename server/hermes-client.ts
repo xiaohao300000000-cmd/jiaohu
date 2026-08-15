@@ -4,14 +4,78 @@ import type { HermesClientConfig } from "./config";
 export type { HermesClientConfig } from "./config";
 
 type FetchLike = typeof fetch;
+type ConversationMessage = { role: string; content: string };
 
-function headers(config: HermesClientConfig): Record<string, string> {
+function headers(
+  config: HermesClientConfig,
+  sessionKey?: string,
+): Record<string, string> {
   return {
     "content-type": "application/json",
     ...(config.apiKey
       ? { authorization: `Bearer ${config.apiKey}` }
       : {}),
+    ...(sessionKey ? { "X-Hermes-Session-Key": sessionKey } : {}),
   };
+}
+
+async function readSessionHistory(
+  sessionId: string,
+  sessionKey: string,
+  config: HermesClientConfig,
+  fetchImpl: FetchLike,
+  signal?: AbortSignal,
+): Promise<ConversationMessage[]> {
+  const response = await fetchImpl(
+    `${config.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=500&order=oldest`,
+    { headers: headers(config, sessionKey), signal },
+  );
+  if (response.status === 404) return [];
+  if (!response.ok) {
+    throw new Error(`Hermes session history failed (${response.status})`);
+  }
+  const body = (await response.json()) as { data?: unknown };
+  if (!Array.isArray(body.data)) return [];
+  return body.data.flatMap((message) => {
+    if (
+      message === null ||
+      typeof message !== "object" ||
+      typeof (message as { role?: unknown }).role !== "string" ||
+      typeof (message as { content?: unknown }).content !== "string"
+    ) return [];
+    const { role, content } = message as ConversationMessage;
+    return role === "user" || role === "assistant" ? [{ role, content }] : [];
+  });
+}
+
+async function readLatestToolOutput(
+  sessionId: string,
+  sessionKey: string,
+  toolName: string,
+  config: HermesClientConfig,
+  fetchImpl: FetchLike,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const response = await fetchImpl(
+    `${config.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=20&order=latest`,
+    { headers: headers(config, sessionKey), signal },
+  );
+  if (!response.ok) return null;
+  const body = (await response.json()) as { data?: unknown };
+  if (!Array.isArray(body.data)) return null;
+  const message = [...body.data].reverse().find((item) =>
+    item !== null &&
+    typeof item === "object" &&
+    (item as { role?: unknown }).role === "tool" &&
+    (item as { tool_name?: unknown }).tool_name === toolName &&
+    typeof (item as { content?: unknown }).content === "string"
+  ) as { content: string } | undefined;
+  if (!message) return null;
+  try {
+    return JSON.parse(message.content) as unknown;
+  } catch {
+    return message.content;
+  }
 }
 
 function opaqueReference(): string {
@@ -21,14 +85,26 @@ function opaqueReference(): string {
 export async function createHermesRun(
   input: string,
   sessionId: string,
+  sessionKey: string,
   config: HermesClientConfig,
   fetchImpl: FetchLike = fetch,
   signal?: AbortSignal,
 ): Promise<{ runId: string }> {
+  const conversationHistory = await readSessionHistory(
+    sessionId,
+    sessionKey,
+    config,
+    fetchImpl,
+    signal,
+  );
   const response = await fetchImpl(`${config.baseUrl}/v1/runs`, {
     method: "POST",
-    headers: headers(config),
-    body: JSON.stringify({ input, session_id: sessionId }),
+    headers: headers(config, sessionKey),
+    body: JSON.stringify({
+      input,
+      session_id: sessionId,
+      conversation_history: conversationHistory,
+    }),
     signal,
   });
   if (!response.ok) {
@@ -174,18 +250,34 @@ export async function* parseHermesEventStream(
 
 export async function* streamHermesRun(
   runId: string,
+  sessionId: string,
+  sessionKey: string,
   config: HermesClientConfig,
   signal?: AbortSignal,
   fetchImpl: FetchLike = fetch,
 ): AsyncGenerator<HermesRunEvent> {
   const response = await fetchImpl(
     `${config.baseUrl}/v1/runs/${encodeURIComponent(runId)}/events`,
-    { headers: headers(config), signal },
+    { headers: headers(config, sessionKey), signal },
   );
   if (!response.ok || !response.body) {
     throw new Error(`Hermes event stream failed (${response.status})`);
   }
-  yield* parseHermesEventStream(response.body, signal);
+  for await (const event of parseHermesEventStream(response.body, signal)) {
+    if (event.type === "tool.completed" && event.tool_name === "pupu_cli") {
+      const output = await readLatestToolOutput(
+        sessionId,
+        sessionKey,
+        event.tool_name,
+        config,
+        fetchImpl,
+        signal,
+      );
+      yield { ...event, output };
+    } else {
+      yield event;
+    }
+  }
 }
 
 export async function stopHermesRun(
