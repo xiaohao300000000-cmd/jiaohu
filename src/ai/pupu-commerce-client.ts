@@ -1,73 +1,26 @@
-import type { TaskSnapshot } from "../domain/task-contract";
-
-export interface CommerceTaskIdentity {
-  taskId: string;
-  version: number;
-}
-
-interface TaskResult {
-  task: TaskSnapshot;
-}
-
-export interface CartPreview extends TaskResult {
-  confirmationId: string;
-  totalCents: number;
-}
-
-export interface CartCommitResult extends TaskResult {
-  status: string;
-}
-
+import type { ProductSummary } from "../components/agent/agent-ui-event";
+interface Preview { previewId: string; version: number; totalCents: number }
 export function createPupuCommerceClient(fetchImpl: typeof fetch = fetch) {
-  async function post<T>(
-    path: string,
-    task: CommerceTaskIdentity,
-    body: Record<string, unknown>,
-  ): Promise<T> {
+  async function post<T>(path: string, body: unknown): Promise<T> {
     const response = await fetchImpl(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        taskId: task.taskId,
-        taskVersion: task.version,
-        ...body,
-      }),
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
-    const value = await response.json() as T & {
-      error?: { message?: string };
-    };
-    if (!response.ok) {
-      throw new Error(
-        value.error?.message || "Pupu commerce request failed",
-      );
-    }
+    const value = await response.json() as T & { error?: { message?: string } };
+    if (!response.ok) throw new Error(value.error?.message || "Pupu commerce request failed");
     return value;
   }
-
   return {
-    previewCart: (task: CommerceTaskIdentity) =>
-      post<CartPreview>("/api/pupu/cart/preview", task, {}),
-    commitCart: (
-      task: CommerceTaskIdentity,
-      confirmationId: string,
-    ) => post<CartCommitResult>("/api/pupu/cart/commit", task, {
-      confirmationId,
-      idempotencyKey: `cart-${crypto.randomUUID()}`,
+    previewCart: (planId: string, products: ProductSummary[]) => post<Preview>("/api/pupu/cart/preview", {
+      planId, items: products.map((item) => ({ productId: item.productId, quantity: item.quantity })),
     }),
-    previewCheckout: (task: CommerceTaskIdentity) =>
-      post<
-        import("../components/pupu/PupuCheckoutJourney").CheckoutPreview &
-        TaskResult
-      >("/api/pupu/checkout/preview", task, {}),
-    createInvitePay: (
-      task: CommerceTaskIdentity,
-      confirmationId: string,
-    ) => post<
-      import("../components/pupu/PupuCheckoutJourney").PaymentPresentation &
-        TaskResult
-    >("/api/pupu/checkout/create-invite-pay", task, {
-      confirmationId,
-      idempotencyKey: `order-${crypto.randomUUID()}`,
+    commitCart: (preview: Pick<Preview, "previewId" | "version">) => post<{ status: string }>("/api/pupu/cart/commit", {
+      ...preview, idempotencyKey: `cart-${crypto.randomUUID()}`,
     }),
+    previewCheckout: () => post<import("../components/pupu/PupuCheckoutJourney").CheckoutPreview>("/api/pupu/checkout/preview", {}),
+    createInvitePay: (preview: { previewId: string; version: number }) =>
+      post<import("../components/pupu/PupuCheckoutJourney").PaymentPresentation>("/api/pupu/checkout/create-invite-pay", {
+        ...preview, idempotencyKey: `order-${crypto.randomUUID()}`,
+      }),
   };
 }

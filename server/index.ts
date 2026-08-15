@@ -1,71 +1,15 @@
 import express from "express";
-import { join } from "node:path";
 import { createServer as createViteServer } from "vite";
 import { handleChatRequest } from "./chat-handler";
-import { getHermesConfig, getPupuLoginConfig } from "./config";
-import { createHermesRun, stopHermesRun, streamHermesRun } from "./hermes-client";
-import { readToolArtifact } from "./tool-artifact";
-import { HermesTaskAgent } from "./agents/task-agent";
+import { getHermesConfig } from "./config";
+import { stopHermesRun } from "./hermes-client";
 import { abortOnClientDisconnect } from "./request-lifecycle";
-import { PupuSessionStore } from "./pupu/session-store";
-import { PupuLoginController } from "./pupu/login-controller";
-import { handlePupuLoginRequest } from "./pupu/login-router";
-import { PupuScopeTicketStore } from "./pupu/scope-ticket";
-import { readPupuSessionCookie } from "./pupu/http-security";
-import { PupuAddressController } from "./pupu/address-controller";
-import { handlePupuAddressRequest } from "./pupu/address-router";
-import { PupuCartController } from "./pupu/cart-controller";
-import { handlePupuCommerceRequest } from "./pupu/commerce-router";
-import { PupuCheckoutController } from "./pupu/checkout-controller";
-import { getDatabaseConfig } from "./db/config";
-import { createDatabasePool } from "./db/pool";
-import { migrate } from "./db/migrate";
-import { TaskCoordinator } from "./tasks/task-coordinator";
-import { PostgresTaskRepository } from "./tasks/task-repository";
-import { TaskApplicationService } from "./tasks/task-application-service";
-import { resolveTaskOwner } from "./tasks/task-owner";
-import { handleTaskRequest } from "./tasks/task-router";
 
 const app = express();
 const host = process.env.APP_HOST || "127.0.0.1";
 const port = Number(process.env.APP_PORT || 4173);
 
-const loginConfig = getPupuLoginConfig();
-const sessionStore = new PupuSessionStore({
-  root: join(loginConfig.runtimeRoot, "sessions"),
-  accountsRoot: loginConfig.accountsRoot,
-});
-const loginController = new PupuLoginController({
-  attemptTtlMs: loginConfig.attemptTtlMs,
-  resendCooldownMs: loginConfig.resendCooldownMs,
-});
-const scopeTickets = new PupuScopeTicketStore({
-  root: join(loginConfig.runtimeRoot, "scope-tickets"),
-  ttlMs: 120_000,
-});
-const addressController = new PupuAddressController();
-const cartController = new PupuCartController();
-const checkoutController = new PupuCheckoutController();
-const databasePool = createDatabasePool(getDatabaseConfig());
-await migrate(databasePool, join(process.cwd(), "server/db/migrations"));
-await databasePool.query("SELECT 1");
-const taskAgentConfig = getHermesConfig();
-const taskAgent = new HermesTaskAgent({
-  createRun: (input, sessionId, signal) =>
-    createHermesRun(input, sessionId, taskAgentConfig, fetch, signal),
-  streamRun: (runId, signal) =>
-    streamHermesRun(runId, taskAgentConfig, signal),
-  readToolArtifact,
-});
-const taskService = new TaskApplicationService(
-  databasePool,
-  new PostgresTaskRepository(),
-  new TaskCoordinator(),
-);
-
-function requestHeaders(
-  headers: express.Request["headers"],
-): Headers {
+function requestHeaders(headers: express.Request["headers"]): Headers {
   const result = new Headers();
   for (const [name, value] of Object.entries(headers)) {
     if (Array.isArray(value)) {
@@ -116,46 +60,13 @@ app.post(
       },
     );
     try {
-      const owner = resolveTaskOwner(request);
-      const chatResponse = await handleChatRequest(request, {
-          taskService,
-          taskAgent,
-          ownerId: owner.ownerId,
-          getPupuReadiness: async (source, currentTask) => {
-            const token = readPupuSessionCookie(source.headers.get("cookie"));
-            const session = await sessionStore.lookup(token);
-            if (!session) return "awaiting_login";
-            return currentTask.context.addressBinding ? "ready" : "awaiting_address";
-          },
-          preparePupuScope: async (source, sessionId, task) => {
-            const token = readPupuSessionCookie(source.headers.get("cookie"));
-            const session = await sessionStore.lookup(token);
-            if (!session) throw new Error("Pupu browser session is required");
-            const selection = task.context.addressBinding;
-            if (!selection) throw new Error("Pupu delivery address selection is required");
-            await scopeTickets.issue({
-              sessionId,
-              taskId: task.taskId,
-              taskVersion: task.version,
-              capabilities: task.allowedCapabilities,
-              accountId: session.accountId,
-              accountsRoot: loginConfig.accountsRoot,
-              dataRoot: loginConfig.dataRoot,
-              receiverId: selection.receiverId,
-              storeId: selection.storeId,
-              placeId: selection.placeId,
-            });
-          },
-          cleanupPupuScope: (sessionId) => scopeTickets.remove(sessionId),
-        });
-      if (owner.setCookie) chatResponse.headers.set("set-cookie", owner.setCookie);
-      await sendWebResponse(chatResponse, res);
+      await sendWebResponse(await handleChatRequest(request), res);
     } catch {
       if (!res.headersSent) {
         res.status(502).json({
           error: {
             code: "upstream_unavailable",
-            message: "实时服务暂时不可用，请稍后重试。",
+            message: "Hermes 暂时不可用，请稍后重试。",
           },
         });
       } else {
@@ -163,140 +74,6 @@ app.post(
       }
     } finally {
       stopWatching();
-    }
-  },
-);
-
-app.get("/api/tasks/:taskId", async (req, res) => {
-  const request = new Request(
-    `http://${req.headers.host || "localhost"}${req.originalUrl}`,
-    { headers: requestHeaders(req.headers) },
-  );
-  try {
-    const owner = resolveTaskOwner(request);
-    await sendWebResponse(
-      await handleTaskRequest(request, { taskService, owner }),
-      res,
-    );
-  } catch {
-    if (!res.headersSent) {
-      res.status(502).json({
-        error: {
-          code: "task_state_unavailable",
-          message: "任务状态暂时不可用。",
-        },
-      });
-    }
-  }
-});
-
-app.use(
-  "/api/pupu/login",
-  express.raw({ type: () => true, limit: "128kb" }),
-  async (req, res) => {
-    const controller = new AbortController();
-    const stopWatching = abortOnClientDisconnect(req, res, controller);
-    const method = req.method.toUpperCase();
-    const request = new Request(
-      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
-      {
-        method,
-        headers: requestHeaders(req.headers),
-        body: method === "GET" || method === "HEAD" ? undefined : req.body,
-        signal: controller.signal,
-      },
-    );
-    try {
-      await sendWebResponse(
-        await handlePupuLoginRequest(request, {
-          sessionStore,
-          controller: loginController,
-          config: loginConfig,
-        }),
-        res,
-      );
-    } catch {
-      if (!res.headersSent) {
-        res.status(502).json({
-          phase: "error",
-          error: {
-            code: "login_unavailable",
-            message: "Pupu login is temporarily unavailable.",
-            retryable: true,
-          },
-        });
-      } else {
-        res.end();
-      }
-    } finally {
-      stopWatching();
-    }
-  },
-);
-
-app.use(
-  "/api/pupu/addresses",
-  express.raw({ type: () => true, limit: "64kb" }),
-  async (req, res) => {
-    const method = req.method.toUpperCase();
-    const request = new Request(
-      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
-      {
-        method,
-        headers: requestHeaders(req.headers),
-        body: method === "GET" || method === "HEAD" ? undefined : req.body,
-      },
-    );
-    try {
-      await sendWebResponse(
-        await handlePupuAddressRequest(request, {
-          sessionStore,
-          controller: addressController,
-          taskService,
-          ownerId: resolveTaskOwner(request).ownerId,
-          config: loginConfig,
-        }),
-        res,
-      );
-    } catch {
-      if (!res.headersSent) {
-        res.status(502).json({
-          error: {
-            code: "address_unavailable",
-            message: "暂时无法读取已保存地址，请稍后重试。",
-          },
-        });
-      }
-    }
-  },
-);
-
-app.use(
-  "/api/pupu",
-  express.raw({ type: () => true, limit: "128kb" }),
-  async (req, res) => {
-    const method = req.method.toUpperCase();
-    const request = new Request(
-      `http://${req.headers.host || "localhost"}${req.originalUrl}`,
-      {
-        method,
-        headers: requestHeaders(req.headers),
-        body: method === "GET" || method === "HEAD" ? undefined : req.body,
-      },
-    );
-    try {
-      await sendWebResponse(
-        await handlePupuCommerceRequest(request, {
-          taskService, ownerId: resolveTaskOwner(request).ownerId, sessionStore, cartController, checkoutController, config: loginConfig,
-        }),
-        res,
-      );
-    } catch {
-      if (!res.headersSent) {
-        res.status(502).json({
-          error: { code: "commerce_unavailable", message: "朴朴交易服务暂时不可用。" },
-        });
-      }
     }
   },
 );

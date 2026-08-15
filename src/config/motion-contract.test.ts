@@ -3,14 +3,12 @@ import journeyTraceSource from "../components/journey/JourneyTrace.tsx?raw";
 import journeyResultSource from "../components/journey/JourneyResultStack.tsx?raw";
 import liquidJourneySource from "../components/journey/LiquidJourney.tsx?raw";
 import journeyOriginSource from "../components/journey/JourneyOriginSurface.tsx?raw";
-import pupuPurchaseSource from "../components/pupu/PupuPurchaseCard.tsx?raw";
 
 const motionSources = [
   journeyTraceSource,
   journeyResultSource,
   liquidJourneySource,
   journeyOriginSource,
-  pupuPurchaseSource,
 ];
 
 describe("motion performance contract", () => {

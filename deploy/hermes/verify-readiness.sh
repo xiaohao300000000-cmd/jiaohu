@@ -10,18 +10,11 @@ source "${hermes_home}/.env"
 set +a
 
 cd "${repo_root}"
-PYTHONPATH=. "${pupu_python}" -m pytest hermes/plugins/pupu_readonly/tests -q
-PYTHONPATH=. "${pupu_python}" -c '
-import json
-from hermes.plugins.pupu_readonly.provider import run_pupu
-for operation in ("capabilities", "login.status"):
-    result = json.loads(run_pupu(operation, {}))
-    print(json.dumps({
-        "operation": result["operation"],
-        "ok": result["ok"],
-        "status": result["status"],
-    }))
-'
+PYTHONPATH=. "${pupu_python}" -m pytest hermes/plugins/pupu_cli/tests -q
+PYTHONPATH=. "${pupu_python}" -c "
+from hermes.plugins.pupu_cli.provider import run_pupu
+print(run_pupu('capabilities', ['--json']))
+"
 
 if command -v hermes >/dev/null 2>&1; then
   hermes plugins list

@@ -10,7 +10,7 @@ import {
 } from "../components/journey/journey-reducer";
 
 describe("Hermes adapter to Journey reducer", () => {
-  it("keeps search results as candidates and never creates a final presentation", () => {
+  it("keeps a live Pupu presentation inside the final Journey snapshot", () => {
     const requestId = "request-integration";
     const runId = "run-integration";
     const context = createHermesEventContext(requestId, "搜索牛奶", runId);
@@ -19,7 +19,7 @@ describe("Hermes adapter to Journey reducer", () => {
       {
         type: "tool.completed",
         run_id: runId,
-        tool_name: "pupu_search_catalog",
+        tool_name: "pupu_cli",
         tool_call_id: "call-1",
         output: {
           schema_version: "1",
@@ -29,17 +29,19 @@ describe("Hermes adapter to Journey reducer", () => {
           household_id: "household-1",
           status: "succeeded",
           data: {
-            items: [{
-              store_product_id: "store-1",
-              product_id: "product-1",
-              name: "鲜牛奶",
-              price_cents: 1290,
-              origin_price_cents: null,
-              unit: "950ml",
-              in_stock: true,
-              tags: [],
-              nutrition: null,
-            }],
+            items: [
+              {
+                store_product_id: "store-1",
+                product_id: "product-1",
+                name: "鲜牛奶",
+                price_cents: 1290,
+                origin_price_cents: null,
+                unit: "950ml",
+                in_stock: true,
+                tags: [],
+                nutrition: null,
+              },
+            ],
           },
           error: null,
           next_actions: [],
@@ -65,10 +67,14 @@ describe("Hermes adapter to Journey reducer", () => {
 
     expect(snapshot.state).toBe("ready");
     expect(snapshot.runId).toBe(runId);
-    expect(snapshot.presentation).toBeNull();
-    expect(context.products).toMatchObject([
-      { productId: "store-1", name: "鲜牛奶", unitPrice: 12.9 },
-    ]);
-    expect(snapshot.result?.items).toEqual([]);
+    expect(snapshot.presentation).toMatchObject({
+      capability: "pupu",
+      component: "pupu.purchase-plan",
+      dataSource: "live",
+      payload: {
+        estimatedTotal: 12.9,
+        products: [{ productId: "store-1", name: "鲜牛奶" }],
+      },
+    });
   });
 });

@@ -1,5 +1,8 @@
+import type {
+  AgentDataSource,
+  PupuPurchasePayload,
+} from "../agent/agent-ui-event";
 import type { PresentationMode } from "../home/presentation";
-import type { TaskSnapshot } from "../../domain/task-contract";
 
 export type JourneyState =
   | "idle"
@@ -43,6 +46,14 @@ export interface JourneyResult {
   items: JourneyResultItem[];
 }
 
+export type PupuJourneyPayload = Omit<
+  PupuPurchasePayload,
+  "budget" | "total"
+> & {
+  estimatedTotal: number;
+  userBudget?: number;
+};
+
 export type PupuLoginPhase =
   | "phone" | "requesting" | "captcha" | "applying_captcha"
   | "sms" | "verifying" | "connected" | "error";
@@ -66,6 +77,13 @@ export interface PupuLoginPresentation {
   error?: { code: string; message: string; retryable: boolean };
 }
 export type JourneyPresentation =
+  | {
+      capability: "pupu";
+      component: "pupu.purchase-plan";
+      mode: PresentationMode;
+      dataSource: AgentDataSource;
+      payload: PupuJourneyPayload;
+    }
   | {
       capability: "pupu";
       component: "pupu.login";
@@ -116,7 +134,6 @@ export interface JourneyError {
 export type JourneyEvent =
   | { type: "request.sent"; requestId: string; text: string }
   | { type: "stream.started"; requestId: string; runId: string }
-  | { type: "task.updated"; requestId: string; task: TaskSnapshot }
   | {
       type: "presentation.updated";
       requestId: string;
@@ -160,7 +177,6 @@ export interface JourneySnapshot {
   activeRequestId: string | null;
   requestText: string;
   runId: string | null;
-  task: TaskSnapshot | null;
   trace: TraceEntry[];
   partialResult: PartialJourneyResult | null;
   result: JourneyResult | null;

@@ -1,87 +1,116 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
-import type { TaskSnapshot } from "../../domain/task-contract";
+import { describe, expect, it, vi } from "vitest";
+import { createDemoPupuPurchaseEvent } from "../agent/agent-ui-event";
+import type { JourneyPresentation, PupuJourneyPayload } from "../journey/types";
 import { PupuPurchaseCard } from "./PupuPurchaseCard";
 
-function finalTask(overrides: Partial<TaskSnapshot> = {}): TaskSnapshot {
+function demoPresentation(
+  input: string,
+  overrides: Partial<PupuJourneyPayload> = {},
+): Extract<JourneyPresentation, { component: "pupu.purchase-plan" }> {
+  const event = createDemoPupuPurchaseEvent(input);
+  const { budget, total, ...payload } = event.payload;
   return {
-    taskId: "task-1",
-    version: 8,
-    requestText: "两个人今晚火锅，120以内，不辣",
-    domain: "commerce",
-    goal: "prepare_cart",
-    phase: "awaiting_cart_confirmation",
-    context: {
-      peopleCount: 2,
-      budgetCents: 12000,
-      dietaryRequirements: ["不辣"],
-      requirements: ["今晚火锅"],
-      selectedProducts: [
-        { productId: "beef", providerProductId: "provider-beef", name: "谷饲肥牛卷", quantity: 2, unitPriceCents: 2990, source: "pupu_live" },
-        { productId: "greens", name: "生菜", quantity: 1, unitPriceCents: 560, source: "pupu_live" },
-      ],
+    capability: "pupu",
+    component: "pupu.purchase-plan",
+    mode: event.presentationMode,
+    dataSource: event.dataSource,
+    payload: {
+      ...payload,
+      estimatedTotal: total,
+      userBudget: budget,
+      ...overrides,
     },
-    finalPlan: {
-      planId: "plan-authoritative",
-      version: 3,
-      title: "火锅 · 2 人",
-      explanation: "Agent 已按预算与饮食要求选定商品。",
-      totalCents: 6540,
-      currency: "CNY",
-    },
-    requestedCapabilities: ["commerce.catalog.search"],
-    allowedCapabilities: ["commerce.cart.prepare"],
-    nextActions: ["confirm_cart"],
-    ...overrides,
   };
 }
 
 describe("PupuPurchaseCard", () => {
-  it("renders the ordered FinalPlan products from TaskSnapshot", async () => {
+  it("leads with the Agent decision and keeps products as evidence", async () => {
     const user = userEvent.setup();
-    const { container } = render(
-      <PupuPurchaseCard task={finalTask()} instanceId="run-must-not-be-plan-id" readOnly />,
+    render(
+      <PupuPurchaseCard
+        presentation={demoPresentation("两个人今晚火锅，120以内")}
+        instanceId="test-budget"
+        onAddToCart={vi.fn()}
+      />,
     );
 
     expect(screen.getByText("火锅 · 2 人")).toBeVisible();
-    expect(screen.getByText("¥65.40 / ¥120.00")).toBeVisible();
-    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "55");
+    expect(screen.getByText("¥74.60 / ¥120.00")).toBeVisible();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "62",
+    );
+    expect(screen.getByText("约 30 min")).toBeVisible();
     expect(screen.getByText("不辣")).toBeVisible();
+    expect(screen.queryByText("示例数据")).not.toBeInTheDocument();
     expect(screen.queryByText("谷饲肥牛卷")).not.toBeInTheDocument();
-    expect(container.querySelector("[data-plan-id]")).toHaveAttribute(
-      "data-plan-id",
-      "plan-authoritative",
+
+    await user.click(
+      screen.getByRole("button", { name: "查看商品证据（3 件）" }),
     );
 
-    await user.click(screen.getByRole("button", { name: "查看已选商品（2 件）" }));
-
+    expect(screen.getAllByRole("img", { name: /商品图/ })).toHaveLength(3);
     expect(screen.getByText("谷饲肥牛卷")).toBeVisible();
-    expect(screen.getByText("数量 2")).toBeVisible();
-    expect(screen.getByText("¥59.80")).toBeVisible();
     expect(screen.getByText("01")).toBeVisible();
     expect(screen.getByText("02")).toBeVisible();
+    expect(screen.getByText("03")).toBeVisible();
+    expect(screen.getByRole("button", { name: "加入购物车" })).toBeEnabled();
   });
 
-  it("does not render without an authoritative FinalPlan", () => {
-    const { container } = render(
+  it("keeps the product readable when an image fails", async () => {
+    const user = userEvent.setup();
+    render(
       <PupuPurchaseCard
-        task={finalTask({ finalPlan: undefined })}
-        instanceId="candidate-only"
+        presentation={demoPresentation("买火锅食材")}
+        instanceId="test-images"
+        onAddToCart={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "查看商品证据（3 件）" }),
+    );
+    fireEvent.error(screen.getAllByRole("img", { name: /商品图/ })[0]);
+
+    expect(screen.getByLabelText("商品暂无图片")).toBeVisible();
+    expect(screen.getByText("谷饲肥牛卷")).toBeVisible();
+    expect(screen.getByText("¥29.90")).toBeVisible();
+  });
+
+  it("does not invent budget progress when the user supplied no budget", () => {
+    render(
+      <PupuPurchaseCard
+        presentation={demoPresentation("搜索牛奶", {
+          estimatedTotal: 12.9,
+          userBudget: undefined,
+        })}
+        instanceId="test-no-budget"
         readOnly
       />,
     );
-    expect(container).toBeEmptyDOMElement();
-  });
 
-  it("does not invent budget progress when TaskSnapshot has no budget", () => {
-    const task = finalTask();
-    task.context = { ...task.context, budgetCents: undefined };
-    render(<PupuPurchaseCard task={task} instanceId="test-no-budget" readOnly />);
-
-    expect(screen.getByText("合计")).toBeVisible();
-    expect(screen.getByText("¥65.40")).toBeVisible();
+    expect(screen.getByText("预估合计")).toBeVisible();
+    expect(screen.getByText("¥12.90")).toBeVisible();
     expect(screen.queryByRole("progressbar")).toBeNull();
     expect(screen.queryByText("预算")).toBeNull();
+  });
+
+  it("never renders NaN or Infinity for malformed totals or budgets", () => {
+    const { container } = render(
+      <PupuPurchaseCard
+        presentation={demoPresentation("搜索牛奶", {
+          estimatedTotal: Number.POSITIVE_INFINITY,
+          userBudget: Number.NaN,
+        })}
+        instanceId="test-invalid-number"
+        readOnly
+      />,
+    );
+
+    expect(container).not.toHaveTextContent(/NaN|Infinity/);
+    expect(screen.getByText("¥0.00")).toBeVisible();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 });

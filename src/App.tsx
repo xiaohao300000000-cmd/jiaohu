@@ -14,13 +14,6 @@ export default function App() {
     snapshot,
     transportBusy,
     submit,
-    submitLoginPhone,
-    submitLoginCode,
-    completeLoginCaptcha,
-    resendLoginCode,
-    cancelLogin,
-    selectAddress,
-    retryAddresses,
     stop,
     retry,
     reset,
@@ -49,10 +42,8 @@ export default function App() {
             <>
               <span className="app-header__canvas-status">
                 {snapshot.state === "ready"
-                  ? "Agent 决策已完成"
-                  : snapshot.presentation?.component === "pupu.login"
-                    ? "等待朴朴安全登录"
-                    : "Hermes 正在处理"}
+                  ? "Hermes 执行已完成"
+                  : "Hermes 正在处理"}
               </span>
               <button
                 className="app-header__return"
@@ -72,7 +63,7 @@ export default function App() {
               >
                 Pupu
               </a>
-              <span className="app-header__status">Hermes 实时 · 操作需确认</span>
+              <span className="app-header__status">Hermes 实时 · Pupu CLI</span>
             </>
           )}
         </div>
@@ -91,10 +82,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               transition={JOURNEY_SPRINGS.quickSnappy}
             >
-              <div
-                className="task-scroll-space"
-                data-testid="task-scroll-space"
-              >
+              <div className="task-scroll-space" data-testid="task-scroll-space">
                 <JourneyOriginSurface
                   requestText={activeTask.input}
                   state={snapshot.state}
@@ -102,13 +90,6 @@ export default function App() {
                   <JourneyPresentationRenderer
                     snapshot={snapshot}
                     onRetry={() => void retry()}
-                    onLoginPhone={(phone) => void submitLoginPhone(phone)}
-                    onLoginCode={(code) => void submitLoginCode(code)}
-                    onLoginCaptchaComplete={() => void completeLoginCaptcha()}
-                    onLoginResend={() => void resendLoginCode()}
-                    onLoginCancel={cancelLogin}
-                    onAddressSelect={(id) => void selectAddress(id)}
-                    onAddressRetry={() => void retryAddresses()}
                   />
                 </JourneyOriginSurface>
               </div>
@@ -132,7 +113,7 @@ export default function App() {
 
       {!isCanvas && (
         <footer className="app-footer">
-          <span>Hermes 实时通道 · 朴朴操作均需确认</span>
+          <span>Hermes 实时通道 · 完整 Pupu CLI</span>
         </footer>
       )}
     </div>

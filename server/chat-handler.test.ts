@@ -1,595 +1,93 @@
 import { describe, expect, it, vi } from "vitest";
 import type { HermesRunEvent } from "../src/ai/hermes-event-adapter";
-import type { ToolArtifactIdentity } from "./tool-artifact";
 import { handleChatRequest } from "./chat-handler";
-import type {
-  TaskPhase,
-  TaskSnapshot,
-} from "../src/domain/task-contract";
-import { TaskCoordinator } from "./tasks/task-coordinator";
-import type { TaskProposal } from "./tasks/task-proposal";
 
-class TestTaskStore {
-  private readonly tasks = new Map<string, TaskSnapshot>();
-  private readonly rules = new TaskCoordinator();
-  private readonly createId: () => string;
-
-  constructor(options: { createId?: () => string } = {}) {
-    this.createId = options.createId || (() => crypto.randomUUID());
-  }
-
-  resolve(command: {
-    input: string;
-    taskId?: string;
-    proposal: TaskProposal;
-  }): TaskSnapshot {
-    const current = command.taskId
-      ? this.resume(command.taskId)
-      : undefined;
-    const decision = current
-      ? this.rules.acceptProposal(
-          current,
-          command.input,
-          command.proposal,
-        )
-      : this.rules.acceptNewTask(
-          this.createId(),
-          command.input,
-          command.proposal,
-        );
-    const task = {
-      ...structuredClone(decision.next),
-      version: current ? current.version + 1 : decision.next.version,
-    };
-    this.tasks.set(task.taskId, task);
-    return structuredClone(task);
-  }
-
-  resume(taskId: string): TaskSnapshot {
-    const task = this.tasks.get(taskId);
-    if (!task) throw new Error("test task was not found");
-    return structuredClone(task);
-  }
-
-  transition(
-    taskId: string,
-    expectedVersion: number,
-    phase: TaskPhase,
-  ): TaskSnapshot {
-    const current = this.resume(taskId);
-    if (current.version !== expectedVersion) {
-      throw new Error("test task version conflict");
-    }
-    const task = {
-      ...this.rules.transition(current, phase).next,
-      version: current.version + 1,
-    };
-    this.tasks.set(taskId, task);
-    return structuredClone(task);
-  }
-}
-
-const liveEnvelope = {
-  schema_version: "1",
-  ok: true,
-  operation: "pupu.catalog.search",
-  request_id: "provider-1",
-  household_id: "household-1",
-  status: "succeeded",
-  data: {
-    items: [
-      {
-        store_product_id: "store-1",
-        product_id: "product-1",
-        name: "鲜牛奶",
-        price_cents: 1290,
-        origin_price_cents: null,
-        unit: "950ml",
-        in_stock: true,
-        tags: [],
-        nutrition: null,
-      },
-    ],
-  },
-  error: null,
-  next_actions: [],
-  evidence_ref: null,
-};
-
-async function* events(): AsyncGenerator<HermesRunEvent> {
+async function* hermesEvents(): AsyncGenerator<HermesRunEvent> {
   yield {
     type: "tool.started",
     run_id: "run-1",
-    tool_name: "pupu_search_catalog",
-    tool_call_id: "run-1:pupu_search_catalog:1",
+    tool_name: "pupu_cli",
+    tool_call_id: "tool-1",
   };
   yield {
     type: "tool.completed",
     run_id: "run-1",
-    tool_name: "pupu_search_catalog",
-    tool_call_id: "run-1:pupu_search_catalog:1",
-    output: liveEnvelope,
-  };
-  yield {
-    type: "run.completed",
-    run_id: "run-1",
-    output: { summary: "找到实时牛奶" },
-  };
-}
-
-async function* consecutiveEvents(): AsyncGenerator<HermesRunEvent> {
-  yield {
-    type: "tool.completed",
-    run_id: "run-1",
-    tool_name: "pupu_search_catalog",
-    tool_call_id: "run-1:pupu_search_catalog:1",
-    output: null,
-  };
-  yield {
-    type: "tool.completed",
-    run_id: "run-1",
-    tool_name: "pupu_read_cart",
-    tool_call_id: "run-1:pupu_read_cart:2",
-    output: null,
-  };
-  yield {
-    type: "run.completed",
-    run_id: "run-1",
-    output: { summary: "完成两次实时读取" },
-  };
-}
-
-function testTaskAgent() {
-  return {
-    propose: async ({ input, current }: {
-      input: string;
-      current?: ReturnType<TestTaskStore["resume"]>;
-    }) => {
-      const commerce = /买|找|搜|牛奶|购物车/u.test(input) ||
-        current?.domain === "commerce";
-      const cartRead = /购物车/u.test(input);
-      return {
-        operation: current ? "continue" as const : "start" as const,
-        domain: commerce ? "commerce" as const : "general" as const,
-        goal: commerce && !cartRead ? "find_products" as const : "advice" as const,
-        requestedCapabilities: cartRead
-          ? ["commerce.cart.read" as const]
-          : commerce
-            ? ["commerce.catalog.search" as const]
-            : [],
-        contextPatch: { requirementsToAdd: [input] },
-      };
+    tool_name: "pupu_cli",
+    tool_call_id: "tool-1",
+    output: {
+      schema_version: "1",
+      ok: true,
+      operation: "pupu.cart.add",
+      request_id: "provider-1",
+      household_id: null,
+      status: "succeeded",
+      data: { status: "verified" },
+      error: null,
+      evidence_ref: null,
     },
   };
-}
-
-function testTaskService(
-  store = new TestTaskStore(),
-) {
-  return {
-    resolve: async (command: {
-      input: string;
-      taskId?: string;
-      proposal: TaskProposal;
-    }) => store.resolve(command),
-    get: async (_ownerId: string, taskId: string) =>
-      store.resume(taskId),
-    transition: async (command: {
-      taskId: string;
-      expectedVersion: number;
-      phase: TaskPhase;
-    }) => store.transition(
-      command.taskId,
-      command.expectedVersion,
-      command.phase,
-    ),
+  yield {
+    type: "run.completed",
+    run_id: "run-1",
+    output: { summary: "购物车已更新" },
   };
 }
 
-describe("handleChatRequest", () => {
-  it("streams typed AI SDK data parts without raw secrets", async () => {
-    const request = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        requestId: "journey-client-1",
-        messages: [
-          {
-            id: "message-1",
-            role: "user",
-            parts: [{ type: "text", text: "帮我找牛奶" }],
-          },
-        ],
-      }),
-      headers: { "content-type": "application/json" },
-    });
+function chatRequest(text = "把牛奶加入购物车") {
+  return new Request("http://localhost/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      requestId: "journey-1",
+      messages: [{
+        role: "user",
+        parts: [{ type: "text", text }],
+      }],
+    }),
+  });
+}
 
+describe("Hermes chat handler", () => {
+  it("sends the user request directly to Hermes without a task contract", async () => {
     const createRun = vi.fn(async () => ({ runId: "run-1" }));
-    const readToolArtifact = vi.fn(async (_identity: ToolArtifactIdentity) => ({
-      status: "ok" as const,
-      result: liveEnvelope,
-    }));
-    const response = await handleChatRequest(request, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(),
-      createRun,
-      streamRun: () => events(),
-      readToolArtifact,
-      createId: () => "session-1",
-    });
-    const body = await response.text();
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/event-stream");
-    expect(body).toContain('"type":"data-journey"');
-    expect(body).not.toContain('"type":"data-pupu"');
-    expect(body).toContain('"type":"trace.updated"');
-    expect(body).not.toContain('"type":"presentation.updated"');
-    expect(body).not.toContain('"dataSource":"live"');
-    expect(body).not.toMatch(/authorization|cookie|reasoning_content|secret/i);
+    const response = await handleChatRequest(chatRequest(), {
+      createRun,
+      streamRun: () => hermesEvents(),
+    });
+    await response.text();
+
     expect(createRun).toHaveBeenCalledWith(
-      expect.stringContaining("Call pupu_search_catalog exactly once"),
-      "journey-client-1",
+      "把牛奶加入购物车",
+      "journey-1",
       expect.any(AbortSignal),
     );
-    expect(readToolArtifact).toHaveBeenCalledWith({
-      sessionId: "journey-client-1",
-      runId: "run-1",
-      toolCallId: "run-1:pupu_search_catalog:1",
-      toolName: "pupu_search_catalog",
-      sequence: 1,
-    });
   });
 
-  it("correlates two consecutive Pupu completions with distinct sequences", async () => {
-    const request = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        requestId: "journey-sequence-1",
-        messages: [
-          {
-            id: "message-1",
-            role: "user",
-            parts: [{ type: "text", text: "搜索牛奶并读取购物车" }],
-          },
-        ],
-      }),
-      headers: { "content-type": "application/json" },
-    });
-    const readToolArtifact = vi.fn(async (_identity: ToolArtifactIdentity) => ({
-      status: "ok" as const,
-      result: liveEnvelope,
-    }));
-
-    const response = await handleChatRequest(request, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(),
+  it("streams only Hermes events and the Hermes result to the frontend", async () => {
+    const response = await handleChatRequest(chatRequest(), {
       createRun: async () => ({ runId: "run-1" }),
-      streamRun: () => consecutiveEvents(),
-      readToolArtifact,
-    });
-    await response.text();
-
-    expect(readToolArtifact).toHaveBeenCalledTimes(2);
-    expect(readToolArtifact.mock.calls.map(([identity]) => identity)).toEqual([
-      expect.objectContaining({
-        toolCallId: "run-1:pupu_search_catalog:1",
-        toolName: "pupu_search_catalog",
-        sequence: 1,
-      }),
-      expect.objectContaining({
-        toolCallId: "run-1:pupu_read_cart:2",
-        toolName: "pupu_read_cart",
-        sequence: 2,
-      }),
-    ]);
-  });
-
-  it("gives an explicit Pupu search intent a single-tool execution contract", async () => {
-    const createRun = vi.fn(async (_input: string) => ({ runId: "run-1" }));
-    const request = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        requestId: "journey-search-1",
-        pupuIntent: true,
-        messages: [{
-          id: "message-1",
-          role: "user",
-          parts: [{ type: "text", text: "帮我看看大瓶的牛奶" }],
-        }],
-      }),
-      headers: { "content-type": "application/json" },
-    });
-    const response = await handleChatRequest(request, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(),
-      preparePupuScope: async () => undefined,
-      createRun,
-      streamRun: () => events(),
-      readToolArtifact: async () => ({
-        status: "ok" as const,
-        result: liveEnvelope,
-      }),
-    });
-    await response.text();
-
-    const prompt = createRun.mock.calls[0]?.[0] || "";
-    expect(prompt).toContain("Call pupu_search_catalog exactly once");
-    expect(prompt).toContain("Do not call pupu_auth_status or pupu_capabilities");
-  });
-
-  it("routes commerce from server task state without accepting pupuIntent", async () => {
-    const coordinator = new TestTaskStore({ createId: () => "task-route-1" });
-    const createRun = vi.fn(async (_input: string) => ({ runId: "run-1" }));
-    const preparePupuScope = vi.fn(async () => undefined);
-    const request = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        requestId: "journey-route-1",
-        pupuIntent: false,
-        messages: [{ role: "user", parts: [{ type: "text", text: "帮我找牛奶" }] }],
-      }),
-      headers: { "content-type": "application/json" },
-    });
-
-    const response = await handleChatRequest(request, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(coordinator),
-      getPupuReadiness: async () => "ready",
-      preparePupuScope,
-      createRun,
-      streamRun: () => events(),
-      readToolArtifact: async () => ({ status: "ok" as const, result: liveEnvelope }),
+      streamRun: () => hermesEvents(),
     });
     const body = await response.text();
 
-    expect(body).toContain('"type":"task.updated"');
-    expect(body).toContain('"taskId":"task-route-1"');
-    expect(preparePupuScope).toHaveBeenCalledWith(
-      request,
-      "journey-route-1",
-      expect.objectContaining({ taskId: "task-route-1", phase: "searching_catalog" }),
-    );
-    expect(createRun.mock.calls[0]?.[0]).toContain("Call pupu_search_catalog exactly once");
+    expect(body).toContain("\"type\":\"stream.started\"");
+    expect(body).toContain("\"label\":\"执行 Pupu CLI\"");
+    expect(body).toContain("\"type\":\"stream.finished\"");
+    expect(body).toContain("\"summary\":\"购物车已更新\"");
+    expect(body).not.toContain("task.updated");
+    expect(body).not.toContain("nextActions");
   });
 
-  it("ignores a client pupuIntent flag for ordinary advice", async () => {
-    const createRun = vi.fn(async () => ({ runId: "run-1" }));
-    const preparePupuScope = vi.fn(async () => undefined);
-    const request = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        requestId: "journey-advice-1",
-        pupuIntent: true,
-        messages: [{ role: "user", parts: [{ type: "text", text: "写一句问候" }] }],
-      }),
-      headers: { "content-type": "application/json" },
-    });
-
-    const response = await handleChatRequest(request, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(new TestTaskStore({ createId: () => "task-advice-1" })),
-      getPupuReadiness: async () => "ready",
-      preparePupuScope,
-      createRun,
-      streamRun: () => events(),
-      readToolArtifact: async () => ({ status: "missing" }),
-    });
-    await response.text();
-
-    expect(preparePupuScope).not.toHaveBeenCalled();
-    expect(createRun).toHaveBeenCalledWith(
-      "写一句问候",
-      "journey-advice-1",
-      expect.any(AbortSignal),
-    );
-  });
-
-  it.each([
-    ["awaiting_login", "pupu.login"],
-    ["awaiting_address", "pupu.address"],
-  ] as const)("stops before Hermes when readiness is %s", async (readiness, component) => {
-    const createRun = vi.fn(async () => ({ runId: "never" }));
-    const request = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        requestId: `journey-${readiness}`,
-        messages: [{ role: "user", parts: [{ type: "text", text: "帮我找牛奶" }] }],
-      }),
-      headers: { "content-type": "application/json" },
-    });
-    const response = await handleChatRequest(request, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(new TestTaskStore({ createId: () => `task-${readiness}` })),
-      getPupuReadiness: async () => readiness,
-      createRun,
-      streamRun: () => events(),
-    });
-    const body = await response.text();
-
-    expect(createRun).not.toHaveBeenCalled();
-    expect(body).toContain(`"component":"${component}"`);
-    expect(body).toContain(`"phase":"${readiness}"`);
-  });
-
-  it("resumes the same task after readiness changes without reclassification", async () => {
-    const coordinator = new TestTaskStore({ createId: () => "task-resume-1" });
-    const firstRequest = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        requestId: "journey-resume-1",
-        messages: [{ role: "user", parts: [{ type: "text", text: "帮我找牛奶" }] }],
-      }),
-      headers: { "content-type": "application/json" },
-    });
-    const first = await handleChatRequest(firstRequest, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(coordinator),
-      getPupuReadiness: async () => "awaiting_login",
-      createRun: async () => ({ runId: "never" }),
-      streamRun: () => events(),
-    });
-    expect(await first.text()).toContain('"taskId":"task-resume-1"');
-
-    const createRun = vi.fn(async (_input: string) => ({ runId: "run-1" }));
-    const secondRequest = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        requestId: "journey-resume-2",
-        taskId: "task-resume-1",
-        resume: true,
-        messages: [{ role: "user", parts: [{ type: "text", text: "这条文本不应重新分类" }] }],
-      }),
-      headers: { "content-type": "application/json" },
-    });
-    const second = await handleChatRequest(secondRequest, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(coordinator),
-      getPupuReadiness: async () => "ready",
-      preparePupuScope: async () => undefined,
-      createRun,
-      streamRun: () => events(),
-      readToolArtifact: async () => ({ status: "ok" as const, result: liveEnvelope }),
-    });
-    const body = await second.text();
-
-    expect(body).toContain('"taskId":"task-resume-1"');
-    expect(createRun.mock.calls[0]?.[0]).toContain("帮我找牛奶");
-  });
-  it("returns a safe typed error for an invalid request", async () => {
-    const request = new Request("http://localhost/api/chat", {
-      method: "POST",
-      body: JSON.stringify({ messages: [] }),
-      headers: { "content-type": "application/json" },
-    });
-
-    const response = await handleChatRequest(request, {
-      taskAgent: testTaskAgent(),
-      taskService: testTaskService(),
-      createRun: async () => ({ runId: "never" }),
-      streamRun: () => events(),
-      readToolArtifact: async () => ({ status: "missing" }),
-      createId: () => "session-invalid",
-    });
-
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      error: {
-        code: "invalid_request",
-        message: "请输入任务内容。",
-      },
-    });
-  });
-
-  it("accepts products only from submit_final_plan, never from summary text", async () => {
-    const store = new TestTaskStore({
-      createId: () => "60000000-0000-4000-8000-000000000001",
-    });
-    const base = testTaskService(store);
-    const submitFinalPlan = vi.fn(async () => {
-      const current = store.resume("60000000-0000-4000-8000-000000000001");
-      return {
-        ...current,
-        version: current.version + 1,
-        phase: "awaiting_cart_confirmation" as const,
-        finalPlan: {
-          planId: "70000000-0000-4000-8000-000000000001",
-          version: 1,
-          title: "结构化方案",
-          explanation: "数据库确认",
-          totalCents: 1290,
-          currency: "CNY" as const,
-        },
-        context: {
-          ...current.context,
-          selectedProducts: [{
-            productId: "store-1",
-            providerProductId: "product-1",
-            name: "鲜牛奶",
-            quantity: 1,
-            unitPriceCents: 1290,
-            source: "pupu_live" as const,
-          }],
-        },
-      };
-    });
-    async function* structuredEvents(): AsyncGenerator<HermesRunEvent> {
-      yield {
-        type: "tool.completed",
-        run_id: "run-structured",
-        tool_name: "pupu_search_catalog",
-        tool_call_id: "call-search",
-        output: null,
-      };
-      yield {
-        type: "tool.completed",
-        run_id: "run-structured",
-        tool_name: "submit_final_plan",
-        tool_call_id: "call-plan",
-        output: null,
-      };
-      yield {
-        type: "run.completed",
-        run_id: "run-structured",
-        output: { summary: "文字里声称选择了另一个商品" },
-      };
-    }
+  it("rejects a request without user text", async () => {
     const response = await handleChatRequest(
       new Request("http://localhost/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          messages: [{
-            role: "user",
-            parts: [{ type: "text", text: "买牛奶" }],
-          }],
-        }),
+        body: JSON.stringify({ messages: [] }),
       }),
-      {
-        taskAgent: testTaskAgent(),
-        taskService: {
-          ...base,
-          startRun: vi.fn(async () => undefined),
-          storeCandidates: vi.fn(async () =>
-            store.resume("60000000-0000-4000-8000-000000000001")),
-          submitFinalPlan,
-          finishRun: vi.fn(async () => undefined),
-        },
-        getPupuReadiness: async () => "ready",
-        createRun: async () => ({ runId: "run-structured" }),
-        streamRun: () => structuredEvents(),
-        readToolArtifact: async ({ toolName }) => ({
-          status: "ok" as const,
-          result: toolName === "submit_final_plan"
-            ? {
-                data: {
-                  plan: {
-                    title: "结构化方案",
-                    explanation: "数据库确认",
-                    items: [{
-                      candidate_id: "80000000-0000-4000-8000-000000000001",
-                      quantity: 1,
-                    }],
-                  },
-                },
-              }
-            : {
-                ...liveEnvelope,
-                data: {
-                  items: [{
-                    ...liveEnvelope.data.items[0],
-                    candidate_id: "80000000-0000-4000-8000-000000000001",
-                  }],
-                },
-              },
-        }),
-      },
     );
-    const body = await response.text();
 
-    expect(submitFinalPlan).toHaveBeenCalledOnce();
-    expect(body).toContain('"title":"结构化方案"');
-    expect(body).toContain('"productId":"store-1"');
-    expect(body).not.toContain('"productId":"另一个商品"');
+    expect(response.status).toBe(400);
   });
-
 });

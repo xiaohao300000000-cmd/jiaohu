@@ -20,15 +20,15 @@ describe("Pupu address client", () => {
 
   it("selects through the dedicated endpoint", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
-      task: { taskId: "task-a", version: 3 },
+      selected: true, addressId: "receiver-a",
     }));
     const client = createPupuAddressClient(fetcher);
-    await client.select({ taskId: "task-a", version: 2 }, "receiver-a");
+    await client.select("receiver-a");
     expect(fetcher).toHaveBeenCalledWith(
       "/api/pupu/addresses/select",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ taskId: "task-a", taskVersion: 2, receiverId: "receiver-a" }),
+        body: JSON.stringify({ receiverId: "receiver-a" }),
       }),
     );
   });
