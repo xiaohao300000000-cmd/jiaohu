@@ -14,9 +14,10 @@ interface ChatDependencies {
     sessionId: string,
     sessionKey: string,
     signal?: AbortSignal,
-  ) => Promise<{ runId: string }>;
+  ) => Promise<{ runId: string; toolMessageCursor: number }>;
   streamRun?: (
     runId: string,
+    toolMessageCursor: number,
     signal?: AbortSignal,
   ) => AsyncIterable<HermesRunEvent>;
   createId?: () => string;
@@ -95,8 +96,7 @@ export async function handleChatRequest(
       ? requestedId
       : dependencies.createId?.() || `journey-${crypto.randomUUID()}`;
   const sessionId = stringField(body, "sessionId");
-  const sessionKey = stringField(body, "sessionKey");
-  if (!validId(sessionId) || !validId(sessionKey)) {
+  if (!validId(sessionId)) {
     return Response.json(
       { error: { code: "invalid_request", message: "缺少 Hermes 会话标识。" } },
       { status: 400 },
@@ -104,18 +104,19 @@ export async function handleChatRequest(
   }
 
   const config = getHermesConfig();
+  const sessionKey = config.ownerSessionKey;
   const createRun =
     dependencies.createRun ||
     ((text: string, id: string, key: string, signal?: AbortSignal) =>
       createHermesRun(text, id, key, config, fetch, signal));
   const streamRun =
     dependencies.streamRun ||
-    ((runId: string, signal?: AbortSignal) =>
-      streamHermesRun(runId, sessionId, sessionKey, config, signal));
+    ((runId: string, toolMessageCursor: number, signal?: AbortSignal) =>
+      streamHermesRun(runId, sessionId, sessionKey, toolMessageCursor, config, signal));
 
   const stream = createUIMessageStream<JourneyUIMessage>({
     execute: async ({ writer }) => {
-      const { runId } = await createRun(input, sessionId, sessionKey, request.signal);
+      const { runId, toolMessageCursor } = await createRun(input, sessionId, sessionKey, request.signal);
       writer.write({ type: "message-metadata", messageMetadata: { runId } });
       const context = createHermesEventContext(requestId, input, runId);
       const started = mapHermesEvent(
@@ -124,7 +125,7 @@ export async function handleChatRequest(
       );
       if (started) writer.write({ type: "data-journey", data: started });
 
-      for await (const event of streamRun(runId, request.signal)) {
+      for await (const event of streamRun(runId, toolMessageCursor, request.signal)) {
         const mapped = mapHermesEvent(event, context);
         if (mapped) writer.write({ type: "data-journey", data: mapped });
       }

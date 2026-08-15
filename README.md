@@ -20,6 +20,13 @@ presentation layer only: they do not decide which CLI operation Hermes may call.
 Login, address, cart, checkout, and invite-pay card components remain available
 without restoring the removed task coordinator or server capability router.
 
+## Hermes identity and conversation lifecycle
+
+The server maps the stable Pupu owner to `X-Hermes-Session-Key`, so the same
+owner shares one Hermes Memory/User scope across phone, desktop, and PWA. The
+browser neither creates nor stores this key. `sessionId` is separate: it is the
+single continuous conversation id, reused for follow-ups and rotated on reset.
+
 ## Current Pupu CLI surface
 
 Hermes discovers the current surface with `pupu_cli("capabilities", ["--json"])`

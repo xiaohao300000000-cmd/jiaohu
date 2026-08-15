@@ -29,5 +29,6 @@ generated_key="$(openssl rand -hex 32)"
 ensure_env_entry "DEEPSEEK_API_KEY" ""
 ensure_env_entry "API_SERVER_KEY" "${generated_key}"
 ensure_env_entry "PUPU_CLI_PATH" "/home/pupu/providers/pupu-cli/.venv/bin/pupu"
+ensure_env_entry "PUPU_OWNER_ID" "household-f3f3b74a55ae8bf60b6c1172"
 
 printf "Installed the complete Pupu CLI plugin and Hermes configuration.\n"

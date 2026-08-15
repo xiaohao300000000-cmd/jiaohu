@@ -6,6 +6,7 @@ describe("getHermesConfig", () => {
     expect(getHermesConfig({})).toEqual({
       baseUrl: "http://127.0.0.1:8642",
       apiKey: undefined,
+      ownerSessionKey: "owner-household-f3f3b74a55ae8bf60b6c1172",
     });
   });
 
@@ -13,9 +14,11 @@ describe("getHermesConfig", () => {
     expect(getHermesConfig({
       HERMES_BASE_URL: "http://localhost:9000",
       HERMES_API_KEY: "test-key",
+      PUPU_OWNER_ID: "owner-shared-across-devices",
     })).toEqual({
       baseUrl: "http://localhost:9000",
       apiKey: "test-key",
+      ownerSessionKey: "owner-owner-shared-across-devices",
     });
   });
 });

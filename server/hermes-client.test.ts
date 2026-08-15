@@ -27,8 +27,8 @@ describe("Hermes client", () => {
         object: "list",
         session_id: "session-1",
         data: [
-          { role: "user", content: "找牛奶" },
-          { role: "assistant", content: "找到了两个商品" },
+          { id: 10, role: "user", content: "找牛奶" },
+          { id: 11, role: "assistant", content: "找到了两个商品" },
         ],
       }), {
         status: 200,
@@ -52,7 +52,7 @@ describe("Hermes client", () => {
       fetchMock,
     );
 
-    expect(result).toEqual({ runId: "run-1" });
+    expect(result).toEqual({ runId: "run-1", toolMessageCursor: 11 });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8642/api/sessions/session-1/messages?limit=500&order=oldest",
       expect.objectContaining({
@@ -126,34 +126,57 @@ describe("Hermes client", () => {
     ]);
   });
 
-  it("hydrates a completed Pupu tool event from the native Hermes session", async () => {
+  it("hydrates consecutive Pupu calls from their own native tool messages", async () => {
     const eventStream = chunkedStream([
       "event: tool.started\ndata: {\"run_id\":\"run-1\",\"tool\":\"pupu_cli\"}\n\n",
       "event: tool.completed\ndata: {\"run_id\":\"run-1\",\"tool\":\"pupu_cli\"}\n\n",
+      "event: tool.started\ndata: {\"run_id\":\"run-1\",\"tool\":\"pupu_cli\"}\n\n",
+      "event: tool.completed\ndata: {\"run_id\":\"run-1\",\"tool\":\"pupu_cli\"}\n\n",
     ]);
-    const cliResult = {
+    const firstResult = {
       schema_version: "1",
       ok: true,
       operation: "pupu.capabilities",
       status: "succeeded",
       data: { operations: ["catalog search"] },
     };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(eventStream, { status: 200 }))
-      .mockResolvedValueOnce(Response.json({
-        object: "list",
-        data: [{
+    const secondResult = {
+      schema_version: "1",
+      ok: true,
+      operation: "pupu.cart.get",
+      status: "succeeded",
+      data: { items: [{ name: "鲜牛奶" }] },
+    };
+    const nativeMessages = {
+      object: "list",
+      data: [
+        {
+          id: 21,
           role: "tool",
           tool_name: "pupu_cli",
-          content: JSON.stringify(cliResult),
-        }],
-      }));
+          tool_call_id: "native-call-first",
+          content: JSON.stringify(firstResult),
+        },
+        {
+          id: 24,
+          role: "tool",
+          tool_name: "pupu_cli",
+          tool_call_id: "native-call-second",
+          content: JSON.stringify(secondResult),
+        },
+      ],
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(eventStream, { status: 200 }))
+      .mockResolvedValueOnce(Response.json(nativeMessages))
+      .mockResolvedValueOnce(Response.json(nativeMessages));
 
     const events = [];
     for await (const event of streamHermesRun(
       "run-1",
       "session-1",
       "user-scope-1",
+      20,
       { baseUrl: "http://127.0.0.1:8642", apiKey: "secret" },
       undefined,
       fetchMock,
@@ -164,16 +187,23 @@ describe("Hermes client", () => {
     expect(events[1]).toEqual(expect.objectContaining({
       type: "tool.completed",
       tool_name: "pupu_cli",
-      output: cliResult,
+      output: firstResult,
     }));
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      "http://127.0.0.1:8642/api/sessions/session-1/messages?limit=20&order=latest",
+    expect(events[3]).toEqual(expect.objectContaining({
+      type: "tool.completed",
+      tool_name: "pupu_cli",
+      output: secondResult,
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://127.0.0.1:8642/api/sessions/session-1/messages?limit=500&order=oldest",
       expect.objectContaining({
         headers: expect.objectContaining({
           "X-Hermes-Session-Key": "user-scope-1",
         }),
       }),
     );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("maps malformed JSON to invalid_result", async () => {

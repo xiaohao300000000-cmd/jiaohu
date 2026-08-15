@@ -74,7 +74,7 @@ describe("Hermes Pupu CLI frontend", () => {
     expect(screen.getByText("购物车已更新")).toBeVisible();
   });
 
-  it("keeps one Hermes session across follow-ups and rotates only it on reset", async () => {
+  it("keeps one conversation session without creating a browser-owned Session-Key", async () => {
     const chatBodies: Array<Record<string, string>> = [];
     vi.stubGlobal("fetch", vi.fn(async (input, init) => {
       if (String(input).startsWith("/api/runs/")) {
@@ -98,8 +98,8 @@ describe("Hermes Pupu CLI frontend", () => {
     expect(chatBodies[0].sessionId).toBeTruthy();
     expect(chatBodies[1].sessionId).toBe(chatBodies[0].sessionId);
     expect(chatBodies[1].requestId).not.toBe(chatBodies[0].requestId);
-    expect(chatBodies[0].sessionKey).toBeTruthy();
-    expect(chatBodies[1].sessionKey).toBe(chatBodies[0].sessionKey);
+    expect(chatBodies[0]).not.toHaveProperty("sessionKey");
+    expect(chatBodies[1]).not.toHaveProperty("sessionKey");
 
     await user.click(screen.getByRole("button", { name: "返回首页" }));
     await waitFor(() => {
@@ -111,6 +111,7 @@ describe("Hermes Pupu CLI frontend", () => {
 
     expect(chatBodies[2].sessionId).toBeTruthy();
     expect(chatBodies[2].sessionId).not.toBe(chatBodies[0].sessionId);
-    expect(chatBodies[2].sessionKey).toBe(chatBodies[0].sessionKey);
+    expect(chatBodies[2]).not.toHaveProperty("sessionKey");
+    expect(localStorage.getItem("pupu-hermes-session-key")).toBeNull();
   });
 });
