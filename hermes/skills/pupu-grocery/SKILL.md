@@ -35,7 +35,7 @@ user explicitly asks to add, remove, or otherwise mutate it.
 
 ## Read commands
 
-- Catalog search: operation `catalog`, arguments `["search", "--query", "<keyword>", "--size", "20", "--household-id", "household-f3f3b74a55ae8bf60b6c1172", "--request-id", "<unique-id>", "--data-root", "/home/pupu/providers/pupu-cli/.local/private", "--json"]`
+- Catalog search: operation `catalog`, arguments `["search", "--query", "<keyword>", "--size", "5", "--household-id", "household-f3f3b74a55ae8bf60b6c1172", "--request-id", "<unique-id>", "--data-root", "/home/pupu/providers/pupu-cli/.local/private", "--json"]`
 - Catalog detail: operation `catalog`, arguments `["detail", "--store-product-id", "<store-product-id>", "--product-id", "<product-id>", "--household-id", "household-f3f3b74a55ae8bf60b6c1172", "--request-id", "<unique-id>", "--data-root", "/home/pupu/providers/pupu-cli/.local/private", "--json"]`
 - Cart read: operation `cart`, arguments `["read", "--household-id", "household-f3f3b74a55ae8bf60b6c1172", "--request-id", "<unique-id>", "--data-root", "/home/pupu/providers/pupu-cli/.local/private", "--json"]`
 - Account info: operation `account`, arguments `["info", "--household-id", "household-f3f3b74a55ae8bf60b6c1172", "--request-id", "<unique-id>", "--data-root", "/home/pupu/providers/pupu-cli/.local/private", "--json"]`
