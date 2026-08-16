@@ -338,6 +338,76 @@ input {
   line-height: 1.55;
 }
 
+.journey-plan-detail {
+  margin: 16px 22px 0;
+  border: 1px solid var(--hairline);
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.6));
+}
+
+.journey-plan-detail__header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+
+.journey-plan-detail__items {
+  display: grid;
+  margin: 0;
+  padding: 0 18px;
+  list-style: none;
+}
+
+.journey-plan-detail__items li {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.journey-plan-detail__items li:first-child {
+  border-top: 0;
+}
+
+.journey-plan-detail__items li > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.journey-plan-detail__items li > span strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.journey-plan-detail__items li > span small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted, rgba(0, 0, 0, 0.5));
+  font-size: 12px;
+}
+
+.journey-plan-detail__items li b {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
 .journey-result__items {
   display: grid;
   margin: 0;

@@ -101,6 +101,51 @@ describe("LiquidJourney", () => {
     );
   });
 
+  it("expands the procurement list when no external onOpenPlan is wired", () => {
+    render(
+      <LiquidJourney
+        snapshot={snapshot({
+          state: "ready",
+          result: {
+            title: "今晚的微辣火锅方案",
+            summary: "荤素搭配，预计 30 分钟送达",
+            totalAmount: 168.5,
+            currency: "CNY",
+            items: [
+              {
+                id: "beef",
+                name: "原切肥牛卷",
+                detail: "350g · 冷鲜",
+                price: 58,
+              },
+              {
+                id: "drink",
+                name: "无糖鲜榨玉米汁",
+                detail: "冷藏 · 1L",
+                price: 18,
+              },
+            ],
+          },
+        })}
+      />,
+    );
+
+    expect(screen.queryByTestId("journey-plan-detail")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "查看采购方案" }));
+
+    const detail = screen.getByTestId("journey-plan-detail");
+    expect(detail).toBeInTheDocument();
+    expect(detail).toHaveTextContent("原切肥牛卷");
+    expect(detail).toHaveTextContent("无糖鲜榨玉米汁");
+    expect(detail).toHaveTextContent("¥58.00");
+    expect(detail).toHaveTextContent("¥18.00");
+    expect(screen.getByRole("button", { name: "收起采购清单" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "收起采购清单" }));
+    expect(screen.queryByTestId("journey-plan-detail")).not.toBeInTheDocument();
+  });
+
   it("does not loop ambient attention in idle", () => {
     const { container } = render(
       <LiquidJourney snapshot={snapshot({ state: "idle" })} />,
