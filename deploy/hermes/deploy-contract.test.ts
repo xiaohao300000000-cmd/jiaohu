@@ -30,5 +30,14 @@ describe("Hermes Pupu CLI deployment contract", () => {
     expect(installer).toContain('rm -rf "${hermes_home}/plugins/pupu_readonly"');
     expect(config).toContain("--household-id");
     expect(config).not.toContain("--accounts-root");
+    expect(config).toContain("perform only the operation the user asked for");
+    expect(config).toContain("do not call account refresh, capabilities");
+    expect(config).toContain("return N candidates");
+    expect(config).toContain("exact product records");
+    expect(config).toContain("session_search to recover");
+    expect(config).toContain("small page size");
+    expect(config).toContain("do not re-run a search");
+    expect(config).toContain("do not keep retrying");
+    expect(skill).toContain('"--size", "5"');
   });
 });
