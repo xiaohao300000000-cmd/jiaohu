@@ -85,7 +85,7 @@ export function JourneyPresentationRenderer({
     return presentationRenderers["pupu.purchase-plan"](presentation, {
       instanceId: snapshot.activeRequestId || "idle",
       runId: snapshot.runId || undefined,
-      readOnly: true,
+      readOnly: false,
     });
   }
 

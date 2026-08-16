@@ -1,4 +1,4 @@
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ListChecks } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { JOURNEY_SPRINGS, JOURNEY_TWEENS } from "../../config/motion";
 import { JourneyResultStack } from "./JourneyResultStack";
@@ -7,6 +7,7 @@ import { JourneyError } from "./JourneyError";
 import { JourneySurface } from "./JourneySurface";
 import { JourneyTrace } from "./JourneyTrace";
 import type { JourneySnapshot, JourneyState } from "./types";
+import { useState } from "react";
 import "./liquid-journey.css";
 
 interface LiquidJourneyProps {
@@ -38,6 +39,15 @@ export function LiquidJourney({
   onInterruptedExitComplete,
 }: LiquidJourneyProps) {
   const isReady = snapshot.state === "ready" && snapshot.result !== null;
+  const [planOpen, setPlanOpen] = useState(false);
+
+  const togglePlan = () => {
+    if (onOpenPlan) {
+      onOpenPlan();
+      return;
+    }
+    setPlanOpen((current) => !current);
+  };
 
   const narrative = (
     <>
@@ -60,12 +70,50 @@ export function LiquidJourney({
     </>
   );
 
+  const planItems =
+    isReady && snapshot.result ? snapshot.result.items : [];
+
   let results = (
-    <JourneyResultStack
-      partialResult={snapshot.partialResult}
-      result={snapshot.result}
-      settled={isReady}
-    />
+    <>
+      <JourneyResultStack
+        partialResult={snapshot.partialResult}
+        result={snapshot.result}
+        settled={isReady}
+      />
+      {planOpen && planItems.length > 0 && (
+        <motion.section
+          className="journey-plan-detail"
+          data-testid="journey-plan-detail"
+          aria-label="采购方案商品清单"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={JOURNEY_SPRINGS.quickSnappy}
+        >
+          <header className="journey-plan-detail__header">
+            <ListChecks size={18} strokeWidth={1.7} aria-hidden="true" />
+            <strong>采购清单（{planItems.length} 件）</strong>
+          </header>
+          <ul className="journey-plan-detail__items">
+            {planItems.map((item) => (
+              <li key={item.id}>
+                <span>
+                  <strong>{item.name}</strong>
+                  {item.detail && <small>{item.detail}</small>}
+                </span>
+                <b>
+                  {new Intl.NumberFormat("zh-CN", {
+                    style: "currency",
+                    currency: "CNY",
+                    minimumFractionDigits: 2,
+                  }).format(item.price)}
+                </b>
+              </li>
+            ))}
+          </ul>
+        </motion.section>
+      )}
+    </>
   );
 
   if (snapshot.state === "awaiting_input" && snapshot.awaitingInput) {
@@ -97,7 +145,8 @@ export function LiquidJourney({
     <motion.button
       className="journey-primary-action"
       type="button"
-      onClick={onOpenPlan}
+      onClick={togglePlan}
+      aria-expanded={planOpen}
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{
@@ -105,8 +154,12 @@ export function LiquidJourney({
         opacity: JOURNEY_TWEENS.fade,
       }}
     >
-      <span>查看采购方案</span>
-      <ArrowUpRight size={19} strokeWidth={1.8} aria-hidden="true" />
+      <span>{planOpen ? "收起采购清单" : "查看采购方案"}</span>
+      {planOpen ? (
+        <ChevronDown size={19} strokeWidth={1.8} aria-hidden="true" />
+      ) : (
+        <ArrowUpRight size={19} strokeWidth={1.8} aria-hidden="true" />
+      )}
     </motion.button>
   ) : null;
 
