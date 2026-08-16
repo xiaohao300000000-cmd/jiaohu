@@ -5,6 +5,7 @@ describe("Hermes Pupu CLI deployment contract", () => {
   it("registers the complete Pupu CLI connection without a read-only plugin", async () => {
     const config = await readFile("deploy/hermes/config.example.yaml", "utf8");
     const installer = await readFile("deploy/hermes/install-plugin.sh", "utf8");
+    const skill = await readFile("hermes/skills/pupu-grocery/SKILL.md", "utf8");
 
     expect(config).toContain("- pupu-cli");
     expect(config).toContain(
@@ -17,13 +18,15 @@ describe("Hermes Pupu CLI deployment contract", () => {
     expect(config).toContain("enabled: off");
     expect(config).not.toMatch(/readonly|read-only|TaskCoordinator|TaskPhase|nextActions|Harness/i);
     expect(installer).toContain("plugins/pupu_cli");
+    expect(installer).toContain('"${repo_root}/hermes/skills/pupu-grocery/"');
+    expect(skill).toContain('operation `cart`');
+    expect(skill).toContain('scoped-add');
+    expect(skill).toContain('--approval-token');
+    expect(skill).toContain('operation `checkout`');
+    expect(skill).toContain('operation `invite-pay`');
 
     expect(config).toContain("If login status returns auth_required, stop");
     expect(config).not.toContain("Start by calling capabilities");
-    expect(installer).toContain('rm -rf "${skill_destination}"');
-    expect(installer).not.toContain(
-      '"${repo_root}/hermes/skills/pupu-grocery/"',
-    );
     expect(installer).toContain('rm -rf "${hermes_home}/plugins/pupu_readonly"');
     expect(config).toContain("--household-id");
     expect(config).not.toContain("--accounts-root");
