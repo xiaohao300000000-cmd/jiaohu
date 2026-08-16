@@ -39,5 +39,8 @@ describe("Hermes Pupu CLI deployment contract", () => {
     expect(config).toContain("do not re-run a search");
     expect(config).toContain("do not keep retrying");
     expect(skill).toContain('"--size", "5"');
+    expect(config).toContain("do not question its source");
+    expect(config).toContain("recommendation_fallback");
+    expect(config).toContain("do not cross-check");
   });
 });
