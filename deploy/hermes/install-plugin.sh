@@ -16,16 +16,17 @@ ensure_env_entry() {
 }
 
 install -d -m 700 "${hermes_home}" "${hermes_home}/plugins"
-install -d -m 700 "${plugin_destination}"
+install -d -m 700 "${hermes_home}/skills/productivity" "${plugin_destination}"
 rm -rf "${hermes_home}/plugins/pupu_readonly"
 rm -rf "${skill_destination}"
 rsync -a --delete --exclude "__pycache__" \
   "${repo_root}/hermes/plugins/pupu_cli/" "${plugin_destination}/"
+rsync -a --delete "${repo_root}/hermes/skills/pupu-grocery/" "${skill_destination}/"
 
 install -m 600 "${script_dir}/config.example.yaml" "${hermes_home}/config.yaml"
 touch "${hermes_home}/.env"
 chmod 600 "${hermes_home}/.env" "${hermes_home}/config.yaml"
-chmod -R go-rwx "${plugin_destination}"
+chmod -R go-rwx "${plugin_destination}" "${skill_destination}"
 
 generated_key="$(openssl rand -hex 32)"
 ensure_env_entry "DEEPSEEK_API_KEY" ""
